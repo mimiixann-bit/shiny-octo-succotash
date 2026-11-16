@@ -1,5 +1,10 @@
 <resources>
-    <color name="black">#000000</color>
-    <color name="white">#FFFFFF</color>
-    <color name="accent">#D4AF37</color>
+    <color name="black">#171914</color>
+    <color name="white">#F4EBDD</color>
+    <color name="accent">#D87843</color>
+    <color name="retro_ink">#171914</color>
+    <color name="retro_panel">#252820</color>
+    <color name="retro_paper">#F4EBDD</color>
+    <color name="retro_sage">#A9B18A</color>
+    <color name="retro_orange">#D87843</color>
 </resources>
