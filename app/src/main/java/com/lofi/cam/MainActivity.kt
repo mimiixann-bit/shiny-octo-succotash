@@ -16,9 +16,6 @@ import androidx.camera.core.*
 import androidx.camera.camera2.interop.Camera2Interop
 import android.hardware.camera2.CaptureRequest
 import android.util.Range
-import android.util.Size
-import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Recorder
@@ -96,12 +93,12 @@ class MainActivity : AppCompatActivity() {
         binding.btnPhotoMode.setOnClickListener { setMode(false) }
         binding.btnVideoMode.setOnClickListener { setMode(true) }
 
-        binding.resSeekBar.max = 150
-        binding.resSeekBar.progress = selectedResolutionP
+        binding.resSeekBar.max = 149
+        binding.resSeekBar.progress = selectedResolutionP - 1
         binding.resSeekBar.setOnSeekBarChangeListener(
             object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                    selectedResolutionP = progress.coerceIn(1, 150)
+                    selectedResolutionP = (progress + 1).coerceIn(1, 150)
                     updateResolutionLabel()
                 }
                 override fun onStartTrackingTouch(sb: SeekBar?) {}
