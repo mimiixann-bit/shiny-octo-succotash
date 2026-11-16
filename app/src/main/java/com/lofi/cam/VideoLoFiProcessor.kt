@@ -58,7 +58,7 @@ object VideoLoFiProcessor {
                 MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
             )
-            setInteger(MediaFormat.KEY_BIT_RATE, 300_000)
+            setInteger(MediaFormat.KEY_BIT_RATE, max(12_000, outWidth * outHeight * targetFps / 5))
             setInteger(MediaFormat.KEY_FRAME_RATE, targetFps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
         }
@@ -258,16 +258,24 @@ object VideoLoFiProcessor {
         val ratio = srcRate.toDouble() / 8000.0
         val outLen = (mono.size / ratio).toInt()
         val out = ShortArray(outLen)
+        var heldSample: Short = 0
         for (i in 0 until outLen) {
-            val srcIndex = (i * ratio).toInt().coerceIn(0, mono.size - 1)
-            out[i] = mono[srcIndex]
+            // Deliberately narrow the audio bandwidth and hold samples for a
+            // cheap, early-digital-recorder / old mobile-phone sound.
+            if (i % 2 == 0) {
+                val srcIndex = (i * ratio).toInt().coerceIn(0, mono.size - 1)
+                val raw = mono[srcIndex].toInt()
+                val quantized = (raw / 512) * 512
+                heldSample = quantized.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            }
+            out[i] = heldSample
         }
         return out
     }
 
     private fun encodeToAmrNb(pcm: ShortArray): Pair<MediaFormat, List<EncodedSample>> {
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AMR_NB, 8000, 1)
-        format.setInteger(MediaFormat.KEY_BIT_RATE, 12200)
+        format.setInteger(MediaFormat.KEY_BIT_RATE, 4750)
 
         val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AMR_NB)
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
