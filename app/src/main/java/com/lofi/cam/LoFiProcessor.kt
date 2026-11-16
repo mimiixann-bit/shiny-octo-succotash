@@ -19,13 +19,10 @@ object LoFiProcessor {
      * mengikuti aspek rasio foto asli. Contoh: 300 -> tinggi ~300px.
      */
     fun process(source: Bitmap, targetHeightP: Int, stampTimestamp: Boolean = true): Bitmap {
-        val lowRes = downscaleToHeight(source, targetHeightP)
-        // Scale balik ke ukuran asli pakai interpolasi halus (bilinear) ->
-        // hasilnya buram/burik khas resolusi rendah, bukan kotak-kotak.
-        val upscaledBlurry = Bitmap.createScaledBitmap(
-            lowRes, source.width, source.height, true
-        )
-        val graded = colorGrade(upscaledBlurry)
+        // Keep the output at the requested low resolution. Upscaling a full
+        // sensor image back to its original size wastes memory and risks OOM.
+        val lowRes = downscaleToHeight(source, targetHeightP.coerceIn(1, 150))
+        val graded = colorGrade(lowRes)
         val grainy = addGrain(graded, amount = 18)
         val vignetted = addVignette(grainy)
         return if (stampTimestamp) stampDate(vignetted) else vignetted
