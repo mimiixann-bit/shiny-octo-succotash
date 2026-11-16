@@ -18,7 +18,7 @@
     <LinearLayout
         android:id="@+id/controlsBar"
         android:layout_width="match_parent"
-        android:layout_height="236dp"
+        android:layout_height="270dp"
         android:background="@color/retro_panel"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
@@ -102,6 +102,51 @@
                 android:textColor="@color/retro_paper"
                 android:textSize="11sp" />
         </LinearLayout>
+
+        <RadioGroup
+            android:id="@+id/aspectRatioGroup"
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            android:layout_marginTop="2dp"
+            android:background="@drawable/retro_segment_bg"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingHorizontal="4dp">
+
+            <RadioButton
+                android:id="@+id/ratio916"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:buttonTint="@color/retro_orange"
+                android:checked="true"
+                android:gravity="center"
+                android:text="9:16"
+                android:textColor="@color/retro_paper"
+                android:textSize="11sp" />
+
+            <RadioButton
+                android:id="@+id/ratio169"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:buttonTint="@color/retro_orange"
+                android:gravity="center"
+                android:text="16:9"
+                android:textColor="@color/retro_paper"
+                android:textSize="11sp" />
+
+            <RadioButton
+                android:id="@+id/ratio43"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:buttonTint="@color/retro_orange"
+                android:gravity="center"
+                android:text="4:3"
+                android:textColor="@color/retro_paper"
+                android:textSize="11sp" />
+        </RadioGroup>
 
         <RadioGroup
             android:id="@+id/formatGroup"
