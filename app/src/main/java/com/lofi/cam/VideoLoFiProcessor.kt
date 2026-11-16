@@ -77,14 +77,22 @@ object VideoLoFiProcessor {
                 extractor.advance()
             }
 
-            require(File(outputPath).exists() && File(outputPath).length() > 0L) {
-                "File hasil 3GP kosong"
-            }
         } finally {
-            if (started) try { muxer?.stop() } catch (_: Exception) {}
+            if (started) {
+                try {
+                    muxer?.stop()
+                } catch (e: Exception) {
+                    File(outputPath).delete()
+                    throw IllegalStateException("Gagal menyelesaikan file 3GP", e)
+                }
+            }
             try { muxer?.release() } catch (_: Exception) {}
             try { extractor.release() } catch (_: Exception) {}
             if (!started) File(outputPath).delete()
+        }
+
+        require(File(outputPath).exists() && File(outputPath).length() > 0L) {
+            "File hasil 3GP kosong"
         }
     }
 }
