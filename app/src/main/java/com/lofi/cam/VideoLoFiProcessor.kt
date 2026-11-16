@@ -14,6 +14,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.Effects
@@ -60,6 +61,66 @@ object VideoLoFiProcessor {
         require(File(outputPath).exists() && File(outputPath).length() > 0L) {
             "File hasil 3GP kosong"
         }
+    }
+
+    fun convertSegments(
+        context: Context,
+        inputPaths: List<String>,
+        outputPath: String,
+        targetHeightP: Int,
+        outputFormat: String
+    ) {
+        require(inputPaths.isNotEmpty()) { "Tidak ada segmen video" }
+        val inputs = inputPaths.map { File(it) }
+        require(inputs.all { it.exists() && it.length() > 0L }) { "Salah satu segmen video kosong" }
+        val height = if (targetHeightP <= 0) 0 else targetHeightP.coerceIn(16, 150).let { if (it % 2 == 0) it else it - 1 }
+        val merged = File(context.cacheDir, "merged_${System.currentTimeMillis()}.mp4")
+        try {
+            transcodeSegments(context, inputs, merged, height)
+            if (outputFormat == "MP4") merged.copyTo(File(outputPath), overwrite = true)
+            else remuxTo3gp(merged, File(outputPath))
+        } finally {
+            merged.delete()
+            inputs.forEach { it.delete() }
+        }
+        require(File(outputPath).exists() && File(outputPath).length() > 0L) { "Hasil gabungan video kosong" }
+    }
+
+    private fun transcodeSegments(context: Context, inputs: List<File>, output: File, height: Int) {
+        val finished = CountDownLatch(1)
+        val failure = AtomicReference<Exception?>(null)
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val items = inputs.map { file ->
+                    val effects = Effects(emptyList(), if (height > 0) listOf(Presentation.createForHeight(height)) else emptyList())
+                    EditedMediaItem.Builder(MediaItem.fromUri(android.net.Uri.fromFile(file)))
+                        .setEffects(effects).build()
+                }
+                val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
+                val composition = Composition.Builder(sequence).build()
+                val listener = object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                        finished.countDown()
+                    }
+                    override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                        failure.set(IllegalStateException("Gagal menggabungkan video kamera", exportException))
+                        finished.countDown()
+                    }
+                }
+                Transformer.Builder(context)
+                    .setVideoMimeType(MimeTypes.VIDEO_H264)
+                    .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                    .addListener(listener)
+                    .build()
+                    .start(composition, output.absolutePath)
+            } catch (e: Exception) {
+                failure.set(e)
+                finished.countDown()
+            }
+        }
+        if (!finished.await(8, TimeUnit.MINUTES)) throw IllegalStateException("Penggabungan video terlalu lama")
+        failure.get()?.let { throw it }
+        require(output.exists() && output.length() > 0L) { "File gabungan tidak terbentuk" }
     }
 
     private fun transcodeToHeight(context: Context, input: File, output: File, height: Int) {
