@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
 
     private var selectedResolutionP = 75
     private var selectedFps = 15
+    private var selectedVideoFormat = "3GP"
 
     private var isVideoMode = false
     private var isRecording = false
@@ -78,6 +79,11 @@ class MainActivity : AppCompatActivity() {
         updateResolutionLabel()
         updateFpsLabel()
         updateModeLabel()
+        binding.formatGroup.check(R.id.format3gp)
+        binding.formatGroup.setOnCheckedChangeListener { _, checkedId ->
+            selectedVideoFormat = if (checkedId == R.id.formatMp4) "MP4" else "3GP"
+            updateModeLabel()
+        }
 
         binding.btnShutter.setOnClickListener {
             if (isVideoMode) {
@@ -174,7 +180,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnVideoMode.alpha = if (isVideoMode) 1f else 0.55f
         binding.fpsSeekBar.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
         binding.fpsLabel.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
-        binding.flashLabel.text = if (isVideoMode) "VIDEO • 3GP" else "PHOTO • JPEG"
+        binding.flashLabel.text = if (isVideoMode) "VIDEO • $selectedVideoFormat" else "PHOTO • JPEG"
         binding.resSeekBar.isEnabled = !isRecording
         binding.fpsSeekBar.isEnabled = isVideoMode && !isRecording
     }
@@ -372,22 +378,24 @@ class MainActivity : AppCompatActivity() {
     private fun processRecordedVideo(rawFile: File) {
         val targetHeightP = selectedResolutionP
         val fps = selectedFps
-        Toast.makeText(this, "Menyimpan video 3GP...", Toast.LENGTH_SHORT).show()
+        val format = selectedVideoFormat
+        Toast.makeText(this, "Memproses video $format...", Toast.LENGTH_SHORT).show()
 
         Thread {
             var outFile: File? = null
             try {
-                outFile = File(cacheDir, "loficam_${System.currentTimeMillis()}.3gp")
+                outFile = File(cacheDir, "loficam_${System.currentTimeMillis()}.${format.lowercase(Locale.ROOT)}")
                 VideoLoFiProcessor.convert(
                     this,
                     rawFile.absolutePath,
                     outFile.absolutePath,
                     targetHeightP,
-                    fps
+                    fps,
+                    format
                 )
                 require(outFile.exists() && outFile.length() > 0L) { "File hasil tidak terbentuk" }
                 runOnUiThread {
-                    val saved = saveVideoToGallery(outFile)
+                    val saved = saveVideoToGallery(outFile, format)
                     if (!saved) {
                         Toast.makeText(this, "Video gagal disimpan ke galeri", Toast.LENGTH_LONG).show()
                     }
@@ -452,15 +460,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveVideoToGallery(file: File): Boolean {
+    private fun saveVideoToGallery(file: File, format: String): Boolean {
         val name = "LOFICAM_" + SimpleDateFormat(
             "yyyyMMdd_HHmmss",
             Locale.getDefault()
         ).format(java.util.Date())
 
         val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, "$name.3gp")
-            put(MediaStore.Video.Media.MIME_TYPE, "video/3gpp")
+            put(MediaStore.Video.Media.DISPLAY_NAME, "$name.${format.lowercase(Locale.ROOT)}")
+            put(MediaStore.Video.Media.MIME_TYPE, if (format == "MP4") "video/mp4" else "video/3gpp")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/LoFiCam")
             }
