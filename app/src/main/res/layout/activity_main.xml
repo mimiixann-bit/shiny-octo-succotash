@@ -140,6 +140,7 @@
             <Button android:id="@+id/btnFlash" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:minHeight="0dp" android:text="FLASH OFF" android:textSize="10sp" />
             <Button android:id="@+id/btnFilter" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:minHeight="0dp" android:text="RETRO" android:textSize="10sp" />
             <Button android:id="@+id/btnHd" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:minHeight="0dp" android:text="HD OFF" android:textSize="10sp" />
+            <Button android:id="@+id/btnGeo" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:minHeight="0dp" android:text="GEO OFF" android:textSize="9sp" />
             <Button android:id="@+id/btnGallery" android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1" android:minHeight="0dp" android:text="GALLERY" android:textSize="9sp" />
         </LinearLayout>
 
