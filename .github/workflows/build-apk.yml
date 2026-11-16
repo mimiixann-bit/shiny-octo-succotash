@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "v1.3.0-camera-upgrade" ]
   workflow_dispatch:
 
 jobs:
