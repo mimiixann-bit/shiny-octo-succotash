@@ -33,8 +33,8 @@ object LoFiProcessor {
 
     private fun downscaleToHeight(src: Bitmap, targetHeightP: Int): Bitmap {
         val scale = targetHeightP.toFloat() / src.height.toFloat()
-        val w = max(16, (src.width * scale).toInt())
-        val h = max(16, targetHeightP)
+        val w = max(1, (src.width * scale).toInt())
+        val h = max(1, targetHeightP)
         return Bitmap.createScaledBitmap(src, w, h, true)
     }
 
