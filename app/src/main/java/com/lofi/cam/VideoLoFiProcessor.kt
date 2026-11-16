@@ -12,6 +12,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.Crop
+import androidx.media3.effect.RgbFilter
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.ExportResult
@@ -67,7 +69,10 @@ object VideoLoFiProcessor {
         inputPaths: List<String>,
         outputPath: String,
         targetHeightP: Int,
-        outputFormat: String
+        outputFormat: String,
+        filterIndex: Int = 0,
+        zoomFactor: Float = 1f,
+        geoLocation: Pair<Float, Float>? = null
     ) {
         require(inputPaths.isNotEmpty()) { "Tidak ada segmen video" }
         val inputs = inputPaths.map { File(it) }
@@ -75,9 +80,8 @@ object VideoLoFiProcessor {
         val height = if (targetHeightP <= 0) 0 else targetHeightP.coerceIn(16, 150).let { if (it % 2 == 0) it else it - 1 }
         val merged = File(context.cacheDir, "merged_${System.currentTimeMillis()}.mp4")
         try {
-            transcodeSegments(context, inputs, merged, height)
-            if (outputFormat == "MP4") merged.copyTo(File(outputPath), overwrite = true)
-            else remuxTo3gp(merged, File(outputPath))
+            transcodeSegments(context, inputs, merged, height, filterIndex, zoomFactor)
+            remuxWithMetadata(merged, File(outputPath), outputFormat, geoLocation)
         } finally {
             merged.delete()
             inputs.forEach { it.delete() }
@@ -85,13 +89,20 @@ object VideoLoFiProcessor {
         require(File(outputPath).exists() && File(outputPath).length() > 0L) { "Hasil gabungan video kosong" }
     }
 
-    private fun transcodeSegments(context: Context, inputs: List<File>, output: File, height: Int) {
+    private fun transcodeSegments(context: Context, inputs: List<File>, output: File, height: Int, filterIndex: Int, zoomFactor: Float) {
         val finished = CountDownLatch(1)
         val failure = AtomicReference<Exception?>(null)
         Handler(Looper.getMainLooper()).post {
             try {
                 val items = inputs.map { file ->
-                    val effects = Effects(emptyList(), if (height > 0) listOf(Presentation.createForHeight(height)) else emptyList())
+                    val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+                    if (filterIndex == 2) videoEffects.add(RgbFilter.createGrayscaleFilter())
+                    if (zoomFactor > 1f) {
+                        val edge = (1f / zoomFactor.coerceIn(1f, 100f)).coerceIn(0.01f, 1f)
+                        videoEffects.add(Crop(-edge, edge, -edge, edge))
+                    }
+                    if (height > 0) videoEffects.add(Presentation.createForHeight(height))
+                    val effects = Effects(emptyList(), videoEffects)
                     EditedMediaItem.Builder(MediaItem.fromUri(android.net.Uri.fromFile(file)))
                         .setEffects(effects).build()
                 }
@@ -174,7 +185,7 @@ object VideoLoFiProcessor {
         }
     }
 
-    private fun remuxTo3gp(input: File, output: File) {
+    private fun remuxWithMetadata(input: File, output: File, format: String, location: Pair<Float, Float>?) {
         val extractor = MediaExtractor()
         var muxer: MediaMuxer? = null
         var started = false
@@ -196,7 +207,12 @@ object VideoLoFiProcessor {
                 if (!supported) continue
 
                 if (muxer == null) {
-                    muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_3GPP)
+                    muxer = MediaMuxer(
+                        output.absolutePath,
+                        if (format == "MP4") MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+                        else MediaMuxer.OutputFormat.MUXER_OUTPUT_3GPP
+                    )
+                    location?.let { (lat, lon) -> muxer?.setLocation(lat, lon) }
                 }
                 val outTrack = muxer!!.addTrack(format)
                 trackMap[i] = outTrack
@@ -207,7 +223,7 @@ object VideoLoFiProcessor {
             }
 
             require(hasVideo && trackMap.isNotEmpty()) {
-                "Format video dari kamera tidak didukung oleh kontainer 3GP"
+                "Format video dari kamera tidak didukung oleh kontainer hasil"
             }
 
             val writer = muxer ?: error("Gagal menyiapkan file 3GP")
@@ -238,7 +254,7 @@ object VideoLoFiProcessor {
                     muxer?.stop()
                 } catch (e: Exception) {
                     output.delete()
-                    throw IllegalStateException("Gagal menyelesaikan file 3GP", e)
+                    throw IllegalStateException("Gagal menyelesaikan file video", e)
                 }
             }
             try { muxer?.release() } catch (_: Exception) {}
