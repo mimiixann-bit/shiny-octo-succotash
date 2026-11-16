@@ -12,6 +12,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.FrameDropEffect
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.ExportResult
@@ -41,14 +42,15 @@ object VideoLoFiProcessor {
         val input = File(inputPath)
         require(input.exists() && input.length() > 0L) { "File rekaman kosong atau tidak ditemukan" }
 
-        // H.264 encoders require practical minimum dimensions and even pixel sizes.
-        // Values 1p-15p therefore map to the smallest usable 16-pixel height.
-        val outputHeight = targetHeightP.coerceIn(16, 150).let {
+        // Keep the UI range at 1p-150p, but use a codec-safe minimum output
+        // height for video. Tiny frames are rejected by many H.264 encoders.
+        // Presentation preserves the source video's aspect ratio.
+        val outputHeight = targetHeightP.coerceIn(32, 150).let {
             if (it % 2 == 0) it else it - 1
         }
         val scaledMp4 = File(context.cacheDir, "scaled_${System.currentTimeMillis()}.mp4")
         try {
-            transcodeToHeight(context, input, scaledMp4, outputHeight)
+            transcodeToHeight(context, input, scaledMp4, outputHeight, targetFps.coerceIn(5, 30))
             if (outputFormat == "MP4") {
                 scaledMp4.copyTo(File(outputPath), overwrite = true)
             } else {
@@ -62,7 +64,7 @@ object VideoLoFiProcessor {
         }
     }
 
-    private fun transcodeToHeight(context: Context, input: File, output: File, height: Int) {
+    private fun transcodeToHeight(context: Context, input: File, output: File, height: Int, fps: Int) {
         val finished = CountDownLatch(1)
         val failure = AtomicReference<Exception?>(null)
         val mainHandler = Handler(Looper.getMainLooper())
@@ -71,7 +73,10 @@ object VideoLoFiProcessor {
             try {
                 val effects = Effects(
                     emptyList(),
-                    listOf(Presentation.createForHeight(height))
+                    listOf(
+                        FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat()),
+                        Presentation.createForHeight(height)
+                    )
                 )
                 val editedItem = EditedMediaItem.Builder(
                     MediaItem.fromUri(android.net.Uri.fromFile(input))
