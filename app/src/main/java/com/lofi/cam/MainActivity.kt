@@ -27,7 +27,6 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import com.lofi.cam.databinding.ActivityMainBinding
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -439,31 +438,24 @@ class MainActivity : AppCompatActivity() {
             values
         )
 
-        uri?.let {
-            contentResolver.openOutputStream(it)?.use { out ->
-                val stream = ByteArrayOutputStream()
+        if (uri == null) {
+            Toast.makeText(this, "Gagal membuat file foto", Toast.LENGTH_LONG).show()
+            return
+        }
 
-                bitmap.compress(
-                    android.graphics.Bitmap.CompressFormat.JPEG,
-                    85,
-                    stream
-                )
-
-                out.write(stream.toByteArray())
+        try {
+            val output = contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Tidak bisa membuka penyimpanan galeri")
+            output.use { stream ->
+                if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, stream)) {
+                    throw IllegalStateException("Gagal mengodekan JPEG")
+                }
             }
-
-            Toast.makeText(
-                this,
-                "Foto tersimpan di galeri",
-                Toast.LENGTH_SHORT
-            ).show()
-
-        } ?: run {
-            Toast.makeText(
-                this,
-                "Gagal menyimpan foto",
-                Toast.LENGTH_SHORT
-            ).show()
+            Toast.makeText(this, "Foto tersimpan di Pictures/LoFiCam", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            contentResolver.delete(uri, null, null)
+            val reason = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+            Toast.makeText(this, "Gagal menyimpan foto: $reason", Toast.LENGTH_LONG).show()
         }
     }
 
