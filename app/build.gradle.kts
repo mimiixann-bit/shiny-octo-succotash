@@ -9,15 +9,12 @@ android {
 
     defaultConfig {
         applicationId = "com.lofi.cam"
-        // Android 13 = API 33. minSdk juga diset 33 agar APK ini
-        // dibuat khusus untuk perangkat Android 13 ke atas.
         minSdk = 33
         targetSdk = 33
         versionCode = 1
         versionName = "1.0"
 
         ndk {
-            // 64-bit saja — tidak menyertakan armeabi-v7a / x86 (32-bit)
             abiFilters += listOf("arm64-v8a")
         }
     }
@@ -48,6 +45,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
