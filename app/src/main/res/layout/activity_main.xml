@@ -77,8 +77,8 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:max="150"
-                android:progress="75"
+                android:max="149"
+                android:progress="74"
                 android:progressTint="@color/retro_orange"
                 android:thumbTint="@color/retro_paper" />
 
