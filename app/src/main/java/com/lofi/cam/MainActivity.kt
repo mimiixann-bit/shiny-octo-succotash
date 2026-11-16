@@ -156,6 +156,13 @@ class MainActivity : AppCompatActivity() {
     private fun updateModeLabel() {
         binding.btnPhotoMode.isSelected = !isVideoMode
         binding.btnVideoMode.isSelected = isVideoMode
+        binding.btnShutter.isSelected = isVideoMode
+        binding.btnShutter.isActivated = isRecording
+        binding.btnShutter.contentDescription = when {
+            isRecording -> "Hentikan rekaman"
+            isVideoMode -> "Mulai merekam video"
+            else -> "Ambil foto"
+        }
         binding.btnPhotoMode.alpha = if (isVideoMode) 0.55f else 1f
         binding.btnVideoMode.alpha = if (isVideoMode) 1f else 0.55f
         binding.fpsSeekBar.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
@@ -296,84 +303,86 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val capture = videoCapture ?: return
-
-        val rawFile = File(
-            cacheDir,
-            "raw_${System.currentTimeMillis()}.mp4"
-        )
-
-        val outputOptions =
-            FileOutputOptions.Builder(rawFile).build()
-
-        var pending =
-            capture.output.prepareRecording(this, outputOptions)
-
-        if (hasAudioPermission()) {
-            pending = pending.withAudioEnabled()
+        val capture = videoCapture
+        if (capture == null) {
+            Toast.makeText(this, "Kamera video belum siap. Coba lagi.", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        activeRecording = pending.start(
-            ContextCompat.getMainExecutor(this)
-        ) { event ->
+        val rawFile = File(cacheDir, "raw_${System.currentTimeMillis()}.mp4")
+        try {
+            var pending = capture.output.prepareRecording(
+                this,
+                FileOutputOptions.Builder(rawFile).build()
+            )
+            if (hasAudioPermission()) pending = pending.withAudioEnabled()
 
-            if (event is VideoRecordEvent.Finalize) {
-                isRecording = false
-                activeRecording = null
-
-                if (!event.hasError()) {
-                    processRecordedVideo(rawFile)
-                } else {
-                    Toast.makeText(
-                        this,
-                        "Rekaman gagal",
-                        Toast.LENGTH_LONG
-                    ).show()
+            isRecording = true
+            updateModeLabel()
+            activeRecording = pending.start(ContextCompat.getMainExecutor(this)) { event ->
+                when (event) {
+                    is VideoRecordEvent.Start -> {
+                        isRecording = true
+                        updateModeLabel()
+                    }
+                    is VideoRecordEvent.Finalize -> {
+                        isRecording = false
+                        activeRecording = null
+                        updateModeLabel()
+                        if (!event.hasError() && rawFile.exists() && rawFile.length() > 0L) {
+                            processRecordedVideo(rawFile)
+                        } else {
+                            rawFile.delete()
+                            Toast.makeText(
+                                this,
+                                "Rekaman gagal disimpan. Coba lagi.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
                 }
             }
+        } catch (e: Exception) {
+            isRecording = false
+            activeRecording = null
+            updateModeLabel()
+            rawFile.delete()
+            val reason = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+            Toast.makeText(this, "Gagal mulai merekam: $reason", Toast.LENGTH_LONG).show()
         }
-
-        isRecording = true
     }
 
     private fun processRecordedVideo(rawFile: File) {
         val targetHeightP = selectedResolutionP
         val fps = selectedFps
-
-        Toast.makeText(
-            this,
-            "Memproses video...",
-            Toast.LENGTH_SHORT
-        ).show()
+        Toast.makeText(this, "Menyimpan video 3GP...", Toast.LENGTH_SHORT).show()
 
         Thread {
+            var outFile: File? = null
             try {
-                val outFile = File(
-                    cacheDir,
-                    "loficam_${System.currentTimeMillis()}.3gp"
-                )
-
+                outFile = File(cacheDir, "loficam_${System.currentTimeMillis()}.3gp")
                 VideoLoFiProcessor.convert(
                     rawFile.absolutePath,
                     outFile.absolutePath,
                     targetHeightP,
                     fps
                 )
-
-                rawFile.delete()
-
+                require(outFile.exists() && outFile.length() > 0L) { "File hasil tidak terbentuk" }
                 runOnUiThread {
-                    saveVideoToGallery(outFile)
+                    val saved = saveVideoToGallery(outFile)
+                    if (!saved) {
+                        Toast.makeText(this, "Video gagal disimpan ke galeri", Toast.LENGTH_LONG).show()
+                    }
                 }
-
             } catch (e: Exception) {
+                outFile?.delete()
                 runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        "Gagal memproses video: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
+                        ?: e.javaClass.simpleName
+                    Toast.makeText(this, "Gagal memproses video: $reason", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                rawFile.delete()
             }
         }.start()
     }
@@ -432,7 +441,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveVideoToGallery(file: File) {
+    private fun saveVideoToGallery(file: File): Boolean {
         val name = "LOFICAM_" +
             SimpleDateFormat(
                 "yyyyMMdd_HHmmss",
