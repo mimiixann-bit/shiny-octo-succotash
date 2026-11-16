@@ -9,8 +9,8 @@ android {
         applicationId = "com.lofi.cam"
         minSdk = 33
         targetSdk = 33
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     buildTypes {
@@ -38,6 +38,7 @@ dependencies {
     implementation("androidx.camera:camera-video:$cameraxVersion")
     implementation("androidx.media3:media3-transformer:1.4.1")
     implementation("androidx.media3:media3-effect:1.4.1")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
