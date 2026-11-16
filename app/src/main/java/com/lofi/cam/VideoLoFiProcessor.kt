@@ -52,7 +52,7 @@ object VideoLoFiProcessor {
         }
         val scaledMp4 = File(context.cacheDir, "scaled_${System.currentTimeMillis()}.mp4")
         try {
-            transcodeToHeight(context, input, scaledMp4, outputHeight)
+            transcodeToHeight(context, input, scaledMp4, outputHeight, targetHeightP)
             if (outputFormat == "MP4") {
                 scaledMp4.copyTo(File(outputPath), overwrite = true)
             } else {
@@ -82,7 +82,7 @@ object VideoLoFiProcessor {
         val height = if (targetHeightP <= 0) 0 else targetHeightP.coerceIn(16, 150).let { if (it % 2 == 0) it else it - 1 }
         val merged = File(context.cacheDir, "merged_${System.currentTimeMillis()}.mp4")
         try {
-            transcodeSegments(context, inputs, merged, height, filterIndex, zoomFactor)
+            transcodeSegments(context, inputs, merged, height, filterIndex, zoomFactor, targetHeightP)
             remuxWithMetadata(merged, File(outputPath), outputFormat, geoLocation)
         } finally {
             merged.delete()
@@ -91,7 +91,7 @@ object VideoLoFiProcessor {
         require(File(outputPath).exists() && File(outputPath).length() > 0L) { "Hasil gabungan video kosong" }
     }
 
-    private fun transcodeSegments(context: Context, inputs: List<File>, output: File, height: Int, filterIndex: Int, zoomFactor: Float) {
+    private fun transcodeSegments(context: Context, inputs: List<File>, output: File, height: Int, filterIndex: Int, zoomFactor: Float, audioPixelHeight: Int) {
         val finished = CountDownLatch(1)
         val failure = AtomicReference<Exception?>(null)
         Handler(Looper.getMainLooper()).post {
@@ -104,7 +104,7 @@ object VideoLoFiProcessor {
                         videoEffects.add(Crop(-edge, edge, -edge, edge))
                     }
                     if (height > 0) videoEffects.add(Presentation.createForHeight(height))
-                    val effects = Effects(listOf(PixelCrunchAudioProcessor(height)), videoEffects)
+                    val effects = Effects(listOf(PixelCrunchAudioProcessor(audioPixelHeight)), videoEffects)
                     EditedMediaItem.Builder(MediaItem.fromUri(android.net.Uri.fromFile(file)))
                         .setEffects(effects).build()
                 }
@@ -136,7 +136,7 @@ object VideoLoFiProcessor {
         require(output.exists() && output.length() > 0L) { "File gabungan tidak terbentuk" }
     }
 
-    private fun transcodeToHeight(context: Context, input: File, output: File, height: Int) {
+    private fun transcodeToHeight(context: Context, input: File, output: File, height: Int, audioPixelHeight: Int) {
         val finished = CountDownLatch(1)
         val failure = AtomicReference<Exception?>(null)
         val mainHandler = Handler(Looper.getMainLooper())
@@ -144,7 +144,7 @@ object VideoLoFiProcessor {
         mainHandler.post {
             try {
                 val effects = Effects(
-                    listOf(PixelCrunchAudioProcessor(height)),
+                    listOf(PixelCrunchAudioProcessor(audioPixelHeight)),
                     if (height > 0) listOf(Presentation.createForHeight(height)) else emptyList()
                 )
                 val editedItem = EditedMediaItem.Builder(
