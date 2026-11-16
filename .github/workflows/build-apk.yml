@@ -19,8 +19,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle
+      # AGP 8.5.0 requires Gradle 8.7; do not use the latest Gradle 9.x.
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: Build APK debug
         run: gradle assembleDebug --no-daemon
