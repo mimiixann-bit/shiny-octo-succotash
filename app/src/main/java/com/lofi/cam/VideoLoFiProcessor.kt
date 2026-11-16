@@ -16,6 +16,7 @@ import androidx.media3.effect.Crop
 import androidx.media3.effect.RgbFilter
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.Effects
@@ -54,7 +55,7 @@ object VideoLoFiProcessor {
             if (outputFormat == "MP4") {
                 scaledMp4.copyTo(File(outputPath), overwrite = true)
             } else {
-                remuxTo3gp(scaledMp4, File(outputPath))
+                remuxWithMetadata(scaledMp4, File(outputPath), "3GP", null)
             }
         } finally {
             scaledMp4.delete()
