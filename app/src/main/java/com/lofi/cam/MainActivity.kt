@@ -216,23 +216,10 @@ class MainActivity : AppCompatActivity() {
 
         try {
             if (isVideoMode) {
-                // CameraX resolution target: selected "p" is the requested frame height.
-                // Hardware may choose the nearest supported size if the exact size is unavailable.
-                val targetHeight = selectedResolutionP.coerceIn(16, 150)
-                val targetWidth = ((targetHeight * 4f / 3f).toInt() / 2) * 2
-                val resolutionSelector = ResolutionSelector.Builder()
-                    .setResolutionStrategy(
-                        ResolutionStrategy(
-                            Size(targetWidth.coerceAtLeast(16), targetHeight.coerceAtLeast(16)),
-                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
-                        )
-                    )
-                    .build()
-
-                // Let ResolutionSelector choose the closest supported video size.
+                // Record at a camera-supported size first. The selected 1p-150p
+                // output size is applied later by Media3 transcoding.
                 val recorder = Recorder.Builder().build()
                 val captureBuilder = VideoCapture.Builder(recorder)
-                    .setResolutionSelector(resolutionSelector)
 
                 // Request the selected frame rate. Hardware may adjust unsupported rates.
                 Camera2Interop.Extender(captureBuilder)
@@ -392,6 +379,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 outFile = File(cacheDir, "loficam_${System.currentTimeMillis()}.3gp")
                 VideoLoFiProcessor.convert(
+                    this,
                     rawFile.absolutePath,
                     outFile.absolutePath,
                     targetHeightP,
