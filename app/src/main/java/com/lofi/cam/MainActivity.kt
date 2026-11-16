@@ -103,7 +103,9 @@ class MainActivity : AppCompatActivity() {
                     updateResolutionLabel()
                 }
                 override fun onStartTrackingTouch(sb: SeekBar?) {}
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {
+                    if (isVideoMode && !isRecording) rebindCamera()
+                }
             }
         )
 
@@ -125,7 +127,9 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onStartTrackingTouch(sb: SeekBar?) {}
 
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {
+                    if (isVideoMode && !isRecording) rebindCamera()
+                }
             }
         )
 
