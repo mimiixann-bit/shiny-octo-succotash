@@ -35,7 +35,8 @@ object VideoLoFiProcessor {
         inputPath: String,
         outputPath: String,
         targetHeightP: Int,
-        targetFps: Int
+        targetFps: Int,
+        outputFormat: String
     ) {
         val input = File(inputPath)
         require(input.exists() && input.length() > 0L) { "File rekaman kosong atau tidak ditemukan" }
@@ -48,7 +49,11 @@ object VideoLoFiProcessor {
         val scaledMp4 = File(context.cacheDir, "scaled_${System.currentTimeMillis()}.mp4")
         try {
             transcodeToHeight(context, input, scaledMp4, outputHeight)
-            remuxTo3gp(scaledMp4, File(outputPath))
+            if (outputFormat == "MP4") {
+                scaledMp4.copyTo(File(outputPath), overwrite = true)
+            } else {
+                remuxTo3gp(scaledMp4, File(outputPath))
+            }
         } finally {
             scaledMp4.delete()
         }
