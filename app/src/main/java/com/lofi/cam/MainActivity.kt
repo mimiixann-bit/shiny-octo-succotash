@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private var filterIndex = 0
     private var hdMode = false
     private var geotagEnabled = false
+    private var selectedZoomFactor = 1f
     private var currentCamera: Camera? = null
     private val recordingSegments = mutableListOf<File>()
     private var switchLensAfterSegment = false
@@ -127,10 +128,10 @@ class MainActivity : AppCompatActivity() {
         binding.zoomSeekBar.progress = 0
         binding.zoomSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                selectedZoomFactor = 1f + 99f * progress / 100f
                 val maxZoom = currentCamera?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f
-                val ratio = 1f + (maxZoom - 1f) * progress / 100f
-                currentCamera?.cameraControl?.setZoomRatio(ratio)
-                binding.zoomLabel.text = String.format(Locale.US, "%.1fx", ratio)
+                currentCamera?.cameraControl?.setZoomRatio(selectedZoomFactor.coerceAtMost(maxZoom))
+                binding.zoomLabel.text = String.format(Locale.US, "%.0fx", selectedZoomFactor)
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
@@ -239,7 +240,7 @@ class MainActivity : AppCompatActivity() {
         binding.formatGroup.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
         binding.flashLabel.text = if (isVideoMode) "VIDEO • $selectedVideoFormat" else "PHOTO • JPEG"
         binding.btnFlash.isEnabled = lensFacing == CameraSelector.LENS_FACING_BACK
-        binding.btnFilter.visibility = if (isVideoMode) android.view.View.GONE else android.view.View.VISIBLE
+        binding.btnFilter.visibility = android.view.View.VISIBLE
         binding.btnGeo.text = if (geotagEnabled) "GEO ON" else "GEO OFF"
         binding.resSeekBar.isEnabled = !hdMode && !isRecording
         binding.fpsSeekBar.isEnabled = isVideoMode && !isRecording
@@ -355,8 +356,10 @@ class MainActivity : AppCompatActivity() {
                     try {
                         source = BitmapFactory.decodeFile(rawFile.absolutePath)
                             ?: throw IllegalStateException("Foto kamera tidak dapat dibaca")
-                        result = if (hdMode && filterIndex == 4) source.copy(source.config ?: android.graphics.Bitmap.Config.ARGB_8888, false) else LoFiProcessor.process(source, if (targetHeightP == 0) source.height else targetHeightP, filterIndex)
+                        val zoomed = cropBitmapForZoom(source, selectedZoomFactor)
+                        result = if (hdMode && filterIndex == 4) zoomed else LoFiProcessor.process(zoomed, if (targetHeightP == 0) zoomed.height else targetHeightP, filterIndex)
                         saveImageToGallery(requireNotNull(result))
+                        if (zoomed !== source && zoomed !== result) zoomed.recycle()
                     } catch (e: Exception) {
                         val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
                             ?: e.javaClass.simpleName
@@ -471,7 +474,10 @@ class MainActivity : AppCompatActivity() {
                     segments.map { it.absolutePath },
                     outFile.absolutePath,
                     targetHeightP,
-                    format
+                    format,
+                    filterIndex,
+                    selectedZoomFactor,
+                    if (geotagEnabled && hasLocationPermission()) getLastKnownCoordinates() else null
                 )
                 require(outFile.exists() && outFile.length() > 0L) { "File hasil tidak terbentuk" }
                 runOnUiThread {
@@ -535,6 +541,27 @@ class MainActivity : AppCompatActivity() {
             val reason = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
             Toast.makeText(this, "Gagal menyimpan foto: $reason", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun cropBitmapForZoom(source: android.graphics.Bitmap, zoom: Float): android.graphics.Bitmap {
+        val factor = zoom.coerceIn(1f, 100f)
+        if (factor <= 1.01f) return source
+        val width = (source.width / factor).toInt().coerceAtLeast(1)
+        val height = (source.height / factor).toInt().coerceAtLeast(1)
+        val left = (source.width - width) / 2
+        val top = (source.height - height) / 2
+        return android.graphics.Bitmap.createBitmap(source, left, top, width, height)
+    }
+
+    private fun getLastKnownCoordinates(): Pair<Float, Float>? {
+        if (!hasLocationPermission()) return null
+        return try {
+            val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+            val location = manager.getProviders(true).mapNotNull { provider ->
+                try { manager.getLastKnownLocation(provider) } catch (_: SecurityException) { null }
+            }.maxByOrNull { it.time } ?: return null
+            Pair(location.latitude.toFloat(), location.longitude.toFloat())
+        } catch (_: Exception) { null }
     }
 
     private fun hasLocationPermission(): Boolean =
