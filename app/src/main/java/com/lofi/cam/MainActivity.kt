@@ -56,13 +56,17 @@ class MainActivity : AppCompatActivity() {
     private var flashMode = ImageCapture.FLASH_MODE_OFF
     private var filterIndex = 0
     private var hdMode = false
+    private var geotagEnabled = false
     private var currentCamera: Camera? = null
     private val recordingSegments = mutableListOf<File>()
     private var switchLensAfterSegment = false
     private var stopAfterSegment = false
     private val filters = arrayOf("RETRO", "WARM", "B&W", "COOL", "ORIGINAL")
 
-    private val requestLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    private val requestLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        geotagEnabled = results[ACCESS_FINE_LOCATION] == true || results[ACCESS_COARSE_LOCATION] == true
+        binding.btnGeo.text = if (geotagEnabled) "GEO ON" else "GEO OFF"
+    }
 
     private val requestPermissions =
         registerForActivityResult(
@@ -96,8 +100,16 @@ class MainActivity : AppCompatActivity() {
         updateResolutionLabel()
         updateFpsLabel()
         updateModeLabel()
-        if (!hasLocationPermission()) {
-            requestLocationPermission.launch(arrayOf(ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION))
+        binding.btnGeo.setOnClickListener {
+            if (geotagEnabled) {
+                geotagEnabled = false
+                binding.btnGeo.text = "GEO OFF"
+            } else if (hasLocationPermission()) {
+                geotagEnabled = true
+                binding.btnGeo.text = "GEO ON"
+            } else {
+                requestLocationPermission.launch(arrayOf(ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION))
+            }
         }
         binding.btnLens.setOnClickListener { switchLens() }
         binding.btnFlash.setOnClickListener { cycleFlash() }
@@ -227,6 +239,8 @@ class MainActivity : AppCompatActivity() {
         binding.formatGroup.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
         binding.flashLabel.text = if (isVideoMode) "VIDEO • $selectedVideoFormat" else "PHOTO • JPEG"
         binding.btnFlash.isEnabled = lensFacing == CameraSelector.LENS_FACING_BACK
+        binding.btnFilter.visibility = if (isVideoMode) android.view.View.GONE else android.view.View.VISIBLE
+        binding.btnGeo.text = if (geotagEnabled) "GEO ON" else "GEO OFF"
         binding.resSeekBar.isEnabled = !hdMode && !isRecording
         binding.fpsSeekBar.isEnabled = isVideoMode && !isRecording
         binding.formatGroup.isEnabled = isVideoMode && !isRecording
@@ -514,7 +528,7 @@ class MainActivity : AppCompatActivity() {
                     throw IllegalStateException("Gagal mengodekan JPEG")
                 }
             }
-            if (hasLocationPermission()) addGeoTag(uri)
+            if (geotagEnabled && hasLocationPermission()) addGeoTag(uri)
             Toast.makeText(this, "Foto tersimpan di Pictures/LoFiCam", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             contentResolver.delete(uri, null, null)
@@ -563,7 +577,9 @@ class MainActivity : AppCompatActivity() {
             ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
             else -> ImageCapture.FLASH_MODE_OFF
         }
-        binding.btnFlash.text = when (flashMode) {
+        binding.btnFlash.text = if (isVideoMode) {
+            if (flashMode == ImageCapture.FLASH_MODE_OFF) "TORCH OFF" else "TORCH ON"
+        } else when (flashMode) {
             ImageCapture.FLASH_MODE_AUTO -> "FLASH AUTO"
             ImageCapture.FLASH_MODE_ON -> "FLASH ON"
             else -> "FLASH OFF"
