@@ -197,8 +197,8 @@ object VideoLoFiProcessor {
             var maxBuffer = 1024 * 1024
 
             for (i in 0 until extractor.trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
+                val trackFormat = extractor.getTrackFormat(i)
+                val mime = trackFormat.getString(MediaFormat.KEY_MIME) ?: continue
                 val supported = mime == MediaFormat.MIMETYPE_VIDEO_AVC ||
                     mime == MediaFormat.MIMETYPE_VIDEO_H263 ||
                     mime == MediaFormat.MIMETYPE_VIDEO_MPEG4 ||
@@ -215,11 +215,11 @@ object VideoLoFiProcessor {
                     )
                     location?.let { (lat, lon) -> muxer?.setLocation(lat, lon) }
                 }
-                val outTrack = muxer!!.addTrack(format)
+                val outTrack = muxer!!.addTrack(trackFormat)
                 trackMap[i] = outTrack
                 if (mime.startsWith("video/")) hasVideo = true
-                if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                    maxBuffer = maxOf(maxBuffer, format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
+                if (trackFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    maxBuffer = maxOf(maxBuffer, trackFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
                 }
             }
 
