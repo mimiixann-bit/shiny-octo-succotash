@@ -356,7 +356,7 @@ class MainActivity : AppCompatActivity() {
                         source = BitmapFactory.decodeFile(rawFile.absolutePath)
                             ?: throw IllegalStateException("Foto kamera tidak dapat dibaca")
                         result = if (hdMode && filterIndex == 4) source.copy(source.config ?: android.graphics.Bitmap.Config.ARGB_8888, false) else LoFiProcessor.process(source, if (targetHeightP == 0) source.height else targetHeightP, filterIndex)
-                        saveImageToGallery(result)
+                        saveImageToGallery(requireNotNull(result))
                     } catch (e: Exception) {
                         val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
                             ?: e.javaClass.simpleName
