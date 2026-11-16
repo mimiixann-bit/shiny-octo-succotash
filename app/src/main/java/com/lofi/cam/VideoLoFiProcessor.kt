@@ -43,7 +43,7 @@ object VideoLoFiProcessor {
 
         // H.264 encoders require practical minimum dimensions and even pixel sizes.
         // Values 1p-15p therefore map to the smallest usable 16-pixel height.
-        val outputHeight = targetHeightP.coerceIn(16, 150).let {
+        val outputHeight = if (targetHeightP <= 0) 0 else targetHeightP.coerceIn(16, 150).let {
             if (it % 2 == 0) it else it - 1
         }
         val scaledMp4 = File(context.cacheDir, "scaled_${System.currentTimeMillis()}.mp4")
@@ -71,7 +71,7 @@ object VideoLoFiProcessor {
             try {
                 val effects = Effects(
                     emptyList(),
-                    listOf(Presentation.createForHeight(height))
+                    if (height > 0) listOf(Presentation.createForHeight(height)) else emptyList()
                 )
                 val editedItem = EditedMediaItem.Builder(
                     MediaItem.fromUri(android.net.Uri.fromFile(input))
