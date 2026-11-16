@@ -19,3 +19,14 @@
 - Video is remuxed into 3GP; it does not yet receive the photo grain, vignette, or color-grade effects.
 - CI APK is debug-key signed for sideload testing and is not a Play Store production build.
 - A successful CI build is not a substitute for physical-device testing.
+
+## 1.2.0 - 2026-11-16
+
+### Added
+- Choose MP4 or 3GP as the saved video container.
+- Retro minimal camera controls with warm paper, sage, and burnt-orange colors.
+- Video output scaling after capture using Media3.
+
+### Notes
+- 1p-15p selections map to a 16-pixel encoder-safe minimum; actual output is subject to encoder constraints.
+- APK size is optimized with R8 and resource shrinking. The build is not padded to an arbitrary 20 MB target.
