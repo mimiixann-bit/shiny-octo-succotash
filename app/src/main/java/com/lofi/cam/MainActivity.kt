@@ -479,9 +479,10 @@ class MainActivity : AppCompatActivity() {
                     selectedZoomFactor,
                     if (geotagEnabled && hasLocationPermission()) getLastKnownCoordinates() else null
                 )
-                require(outFile.exists() && outFile.length() > 0L) { "File hasil tidak terbentuk" }
+                val completedFile = requireNotNull(outFile)
+                require(completedFile.exists() && completedFile.length() > 0L) { "File hasil tidak terbentuk" }
                 runOnUiThread {
-                    if (!saveVideoToGallery(outFile, format)) {
+                    if (!saveVideoToGallery(completedFile, format)) {
                         Toast.makeText(this, "Video gagal disimpan ke galeri", Toast.LENGTH_LONG).show()
                     }
                 }
