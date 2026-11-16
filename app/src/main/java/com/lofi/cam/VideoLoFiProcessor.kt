@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
@@ -96,7 +97,9 @@ object VideoLoFiProcessor {
                     EditedMediaItem.Builder(MediaItem.fromUri(android.net.Uri.fromFile(file)))
                         .setEffects(effects).build()
                 }
-                val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
+                val sequence = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_VIDEO))
+                    .addItems(items)
+                    .build()
                 val composition = Composition.Builder(sequence).build()
                 val listener = object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
