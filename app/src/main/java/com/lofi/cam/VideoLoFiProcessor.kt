@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
@@ -103,7 +104,7 @@ object VideoLoFiProcessor {
                         videoEffects.add(Crop(-edge, edge, -edge, edge))
                     }
                     if (height > 0) videoEffects.add(Presentation.createForHeight(height))
-                    val effects = Effects(emptyList(), videoEffects)
+                    val effects = Effects(listOf(PixelCrunchAudioProcessor(height)), videoEffects)
                     EditedMediaItem.Builder(MediaItem.fromUri(android.net.Uri.fromFile(file)))
                         .setEffects(effects).build()
                 }
@@ -143,7 +144,7 @@ object VideoLoFiProcessor {
         mainHandler.post {
             try {
                 val effects = Effects(
-                    emptyList(),
+                    listOf(PixelCrunchAudioProcessor(height)),
                     if (height > 0) listOf(Presentation.createForHeight(height)) else emptyList()
                 )
                 val editedItem = EditedMediaItem.Builder(
