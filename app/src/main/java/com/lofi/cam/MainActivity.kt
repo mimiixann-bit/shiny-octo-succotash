@@ -57,6 +57,9 @@ class MainActivity : AppCompatActivity() {
     private var filterIndex = 0
     private var hdMode = false
     private var currentCamera: Camera? = null
+    private val recordingSegments = mutableListOf<File>()
+    private var switchLensAfterSegment = false
+    private var stopAfterSegment = false
     private val filters = arrayOf("RETRO", "WARM", "B&W", "COOL", "ORIGINAL")
 
     private val requestLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
@@ -369,26 +372,31 @@ class MainActivity : AppCompatActivity() {
 
     private fun toggleRecording() {
         if (isRecording) {
+            stopAfterSegment = true
             activeRecording?.stop()
             return
         }
-
-        val capture = videoCapture
-        if (capture == null) {
+        if (videoCapture == null) {
             Toast.makeText(this, "Kamera video belum siap. Coba lagi.", Toast.LENGTH_SHORT).show()
             return
         }
+        recordingSegments.clear()
+        switchLensAfterSegment = false
+        stopAfterSegment = false
+        isRecording = true
+        updateModeLabel()
+        startRecordingSegment()
+    }
 
-        val rawFile = File(cacheDir, "raw_${System.currentTimeMillis()}.mp4")
+    private fun startRecordingSegment() {
+        val capture = videoCapture ?: run {
+            finishRecordingWithError("Kamera tidak tersedia setelah pergantian lensa")
+            return
+        }
+        val rawFile = File(cacheDir, "segment_${System.currentTimeMillis()}.mp4")
         try {
-            var pending = capture.output.prepareRecording(
-                this,
-                FileOutputOptions.Builder(rawFile).build()
-            )
+            var pending = capture.output.prepareRecording(this, FileOutputOptions.Builder(rawFile).build())
             if (hasAudioPermission()) pending = pending.withAudioEnabled()
-
-            isRecording = true
-            updateModeLabel()
             activeRecording = pending.start(ContextCompat.getMainExecutor(this)) { event ->
                 when (event) {
                     is VideoRecordEvent.Start -> {
@@ -396,66 +404,73 @@ class MainActivity : AppCompatActivity() {
                         updateModeLabel()
                     }
                     is VideoRecordEvent.Finalize -> {
-                        isRecording = false
                         activeRecording = null
-                        updateModeLabel()
-                        if (!event.hasError() && rawFile.exists() && rawFile.length() > 0L) {
-                            processRecordedVideo(rawFile)
-                        } else {
+                        if (event.hasError() || !rawFile.exists() || rawFile.length() == 0L) {
                             rawFile.delete()
-                            Toast.makeText(
-                                this,
-                                "Rekaman gagal disimpan. Coba lagi.",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            finishRecordingWithError("Rekaman gagal disimpan")
+                            return@start
+                        }
+                        recordingSegments.add(rawFile)
+                        if (stopAfterSegment) {
+                            stopAfterSegment = false
+                            isRecording = false
+                            updateModeLabel()
+                            processRecordedVideos(recordingSegments.toList())
+                        } else if (switchLensAfterSegment) {
+                            switchLensAfterSegment = false
+                            lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK)
+                                CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+                            binding.btnLens.text = if (lensFacing == CameraSelector.LENS_FACING_FRONT) "FRONT" else "BACK"
+                            rebindCamera()
+                            startRecordingSegment()
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            isRecording = false
-            activeRecording = null
-            updateModeLabel()
             rawFile.delete()
-            val reason = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
-            Toast.makeText(this, "Gagal mulai merekam: $reason", Toast.LENGTH_LONG).show()
+            finishRecordingWithError(e.localizedMessage ?: "Tidak dapat memulai segmen rekaman")
         }
     }
 
-    private fun processRecordedVideo(rawFile: File) {
-        val targetHeightP = if (hdMode) 0 else selectedResolutionP
-        val fps = selectedFps
-        val format = selectedVideoFormat
-        Toast.makeText(this, "Memproses video $format...", Toast.LENGTH_SHORT).show()
+    private fun finishRecordingWithError(message: String) {
+        isRecording = false
+        activeRecording = null
+        switchLensAfterSegment = false
+        stopAfterSegment = false
+        recordingSegments.forEach { it.delete() }
+        recordingSegments.clear()
+        updateModeLabel()
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
 
+    private fun processRecordedVideos(segments: List<File>) {
+        val targetHeightP = if (hdMode) 0 else selectedResolutionP
+        val format = selectedVideoFormat
+        Toast.makeText(this, "Menggabungkan video $format...", Toast.LENGTH_SHORT).show()
         Thread {
             var outFile: File? = null
             try {
                 outFile = File(cacheDir, "loficam_${System.currentTimeMillis()}.${format.lowercase(Locale.ROOT)}")
-                VideoLoFiProcessor.convert(
+                VideoLoFiProcessor.convertSegments(
                     this,
-                    rawFile.absolutePath,
+                    segments.map { it.absolutePath },
                     outFile.absolutePath,
                     targetHeightP,
-                    fps,
                     format
                 )
                 require(outFile.exists() && outFile.length() > 0L) { "File hasil tidak terbentuk" }
                 runOnUiThread {
-                    val saved = saveVideoToGallery(outFile, format)
-                    if (!saved) {
+                    if (!saveVideoToGallery(outFile, format)) {
                         Toast.makeText(this, "Video gagal disimpan ke galeri", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
                 outFile?.delete()
+                segments.forEach { it.delete() }
                 runOnUiThread {
-                    val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
-                        ?: e.javaClass.simpleName
-                    Toast.makeText(this, "Gagal memproses video: $reason", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Gagal menggabungkan video: ${e.localizedMessage ?: e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
                 }
-            } finally {
-                rawFile.delete()
             }
         }.start()
     }
@@ -530,7 +545,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun switchLens() {
         if (isRecording) {
-            Toast.makeText(this, "Hentikan rekaman dulu untuk mengganti kamera", Toast.LENGTH_LONG).show()
+            if (activeRecording == null || switchLensAfterSegment) return
+            switchLensAfterSegment = true
+            Toast.makeText(this, "Mengganti kamera dan melanjutkan rekaman...", Toast.LENGTH_SHORT).show()
+            activeRecording?.stop()
             return
         }
         lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK)
