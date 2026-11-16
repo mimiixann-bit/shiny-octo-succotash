@@ -13,6 +13,13 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
+import androidx.camera.camera2.interop.Camera2Interop
+import android.hardware.camera2.CameraCharacteristics
+import android.util.Range
+import android.util.Size
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Quality
@@ -207,15 +214,52 @@ class MainActivity : AppCompatActivity() {
 
         try {
             if (isVideoMode) {
-                val recorder = Recorder.Builder()
-                    .setQualitySelector(
-                        QualitySelector.from(Quality.SD)
+                // CameraX resolution target: selected "p" is the requested frame height.
+                // Hardware may choose the nearest supported size if the exact size is unavailable.
+                val targetHeight = selectedResolutionP.coerceIn(16, 150)
+                val targetWidth = ((targetHeight * 4f / 3f).toInt() / 2) * 2
+                val resolutionSelector = ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(targetWidth.coerceAtLeast(16), targetHeight.coerceAtLeast(16)),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+                        )
                     )
                     .build()
 
-                val capture = VideoCapture.withOutput(recorder)
+                val recorder = Recorder.Builder()
+                    .setQualitySelector(QualitySelector.from(Quality.SD))
+                    .build()
+                val captureBuilder = VideoCapture.Builder(recorder)
+                    .setResolutionSelector(resolutionSelector)
 
-                provider.bindToLifecycle(
+                // Request the closest FPS range supported by the camera, rather than
+                // only changing the label in the UI.
+                val fpsRanges = try {
+                    Camera2CameraInfo.from(provider.getCameraInfo(selector))
+                        .getCameraCharacteristic(
+                            CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES
+                        )?.toList().orEmpty()
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                val chosenRange = fpsRanges
+                    .filter { it.lower <= selectedFps && it.upper >= selectedFps }
+                    .minByOrNull { it.upper - it.lower }
+                    ?: fpsRanges.minByOrNull {
+                        kotlin.math.abs(it.upper - selectedFps) + kotlin.math.abs(it.lower - selectedFps)
+                    }
+
+                if (chosenRange != null) {
+                    Camera2Interop.Extender(captureBuilder)
+                        .setCaptureRequestOption(
+                            CameraCharacteristics.CONTROL_AE_TARGET_FPS_RANGE,
+                            chosenRange
+                        )
+                }
+
+                val capture = captureBuilder.build()
+                val camera = provider.bindToLifecycle(
                     this,
                     selector,
                     preview,
