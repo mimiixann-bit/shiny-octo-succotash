@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0 - Camera feature upgrade
+- Added front/rear camera switching, including segmented recording that is merged into one final video.
+- Added photo flash modes and rear-camera torch control for video.
+- Added optional GPS EXIF tagging for photos when location permission is granted.
+- Added latest LoFiCam gallery shortcut.
+- Added Retro, Warm, B&W, Cool, and Original photo looks.
+- Added hardware-limited zoom control and native-resolution HD mode.
+- Kept MP4/3GP export and low-resolution video output.
+
 ## 1.1.0 - 2026-11-16
 
 ### Added
