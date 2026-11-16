@@ -74,7 +74,8 @@ object VideoLoFiProcessor {
         outputFormat: String,
         filterIndex: Int = 0,
         zoomFactor: Float = 1f,
-        geoLocation: Pair<Float, Float>? = null
+        geoLocation: Pair<Float, Float>? = null,
+        aspectRatio: String = "9:16"
     ) {
         require(inputPaths.isNotEmpty()) { "Tidak ada segmen video" }
         val inputs = inputPaths.map { File(it) }
@@ -82,7 +83,7 @@ object VideoLoFiProcessor {
         val height = if (targetHeightP <= 0) 0 else targetHeightP.coerceIn(16, 150).let { if (it % 2 == 0) it else it - 1 }
         val merged = File(context.cacheDir, "merged_${System.currentTimeMillis()}.mp4")
         try {
-            transcodeSegments(context, inputs, merged, height, filterIndex, zoomFactor, targetHeightP)
+            transcodeSegments(context, inputs, merged, height, filterIndex, zoomFactor, targetHeightP, aspectRatio)
             remuxWithMetadata(merged, File(outputPath), outputFormat, geoLocation)
         } finally {
             merged.delete()
@@ -91,7 +92,26 @@ object VideoLoFiProcessor {
         require(File(outputPath).exists() && File(outputPath).length() > 0L) { "Hasil gabungan video kosong" }
     }
 
-    private fun transcodeSegments(context: Context, inputs: List<File>, output: File, height: Int, filterIndex: Int, zoomFactor: Float, audioPixelHeight: Int) {
+    private fun getDisplayAspectRatio(file: File): Float {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            for (index in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(index)
+                if (format.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true) {
+                    val width = format.getInteger(MediaFormat.KEY_WIDTH).toFloat()
+                    val height = format.getInteger(MediaFormat.KEY_HEIGHT).toFloat()
+                    val rotation = if (format.containsKey("rotation-degrees")) format.getInteger("rotation-degrees") else 0
+                    return if (rotation == 90 || rotation == 270) height / width else width / height
+                }
+            }
+        } finally {
+            extractor.release()
+        }
+        return 9f / 16f
+    }
+
+    private fun transcodeSegments(context: Context, inputs: List<File>, output: File, height: Int, filterIndex: Int, zoomFactor: Float, audioPixelHeight: Int, aspectRatio: String) {
         val finished = CountDownLatch(1)
         val failure = AtomicReference<Exception?>(null)
         Handler(Looper.getMainLooper()).post {
@@ -99,9 +119,21 @@ object VideoLoFiProcessor {
                 val items = inputs.map { file ->
                     val videoEffects = mutableListOf<androidx.media3.common.Effect>()
                     if (filterIndex == 2) videoEffects.add(RgbFilter.createGrayscaleFilter())
-                    if (zoomFactor > 1f) {
-                        val edge = (1f / zoomFactor.coerceIn(1f, 100f)).coerceIn(0.01f, 1f)
-                        videoEffects.add(Crop(-edge, edge, -edge, edge))
+                    val sourceAspect = getDisplayAspectRatio(file)
+                    val targetAspect = when (aspectRatio) {
+                        "16:9" -> 16f / 9f
+                        "4:3" -> 4f / 3f
+                        else -> 9f / 16f
+                    }
+                    var cropX = 1f
+                    var cropY = 1f
+                    if (sourceAspect > targetAspect) cropX = targetAspect / sourceAspect
+                    else if (sourceAspect < targetAspect) cropY = sourceAspect / targetAspect
+                    val zoom = 1f / zoomFactor.coerceIn(1f, 100f)
+                    cropX = (cropX * zoom).coerceIn(0.01f, 1f)
+                    cropY = (cropY * zoom).coerceIn(0.01f, 1f)
+                    if (cropX < 0.999f || cropY < 0.999f) {
+                        videoEffects.add(Crop(-cropX, cropX, -cropY, cropY))
                     }
                     if (height > 0) videoEffects.add(Presentation.createForHeight(height))
                     val effects = Effects(listOf(PixelCrunchAudioProcessor(audioPixelHeight)), videoEffects)
@@ -195,6 +227,7 @@ object VideoLoFiProcessor {
             extractor.setDataSource(input.absolutePath)
             val trackMap = mutableMapOf<Int, Int>()
             var hasVideo = false
+            var outputRotation = 0
             var maxBuffer = 1024 * 1024
 
             for (i in 0 until extractor.trackCount) {
@@ -218,7 +251,10 @@ object VideoLoFiProcessor {
                 }
                 val outTrack = muxer!!.addTrack(trackFormat)
                 trackMap[i] = outTrack
-                if (mime.startsWith("video/")) hasVideo = true
+                if (mime.startsWith("video/")) {
+                    hasVideo = true
+                    outputRotation = if (trackFormat.containsKey("rotation-degrees")) trackFormat.getInteger("rotation-degrees") else 0
+                }
                 if (trackFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
                     maxBuffer = maxOf(maxBuffer, trackFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
                 }
@@ -228,7 +264,8 @@ object VideoLoFiProcessor {
                 "Format video dari kamera tidak didukung oleh kontainer hasil"
             }
 
-            val writer = muxer ?: error("Gagal menyiapkan file 3GP")
+            val writer = muxer ?: error("Gagal menyiapkan file video")
+            if (outputRotation in listOf(90, 180, 270)) writer.setOrientationHint(outputRotation)
             writer.start()
             started = true
             trackMap.keys.forEach { extractor.selectTrack(it) }
