@@ -37,8 +37,7 @@ class MainActivity : AppCompatActivity() {
     private var activeRecording: Recording? = null
     private var cameraProvider: ProcessCameraProvider? = null
 
-    private val resolutionPresets = listOf(120, 180, 240, 300, 360, 480)
-    private var resolutionIndex = 2
+    private var selectedResolutionP = 75
     private var selectedFps = 15
 
     private var isVideoMode = false
@@ -85,26 +84,24 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.resLabel.setOnClickListener {
-            resolutionIndex =
-                (resolutionIndex + 1) % resolutionPresets.size
-            updateResolutionLabel()
-        }
+        binding.btnPhotoMode.setOnClickListener { setMode(false) }
+        binding.btnVideoMode.setOnClickListener { setMode(true) }
 
-        binding.btnModeToggle.setOnClickListener {
-            if (isRecording) {
-                Toast.makeText(
-                    this,
-                    "Hentikan rekaman dulu",
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
-                isVideoMode = !isVideoMode
-                updateModeLabel()
-                rebindCamera()
+        binding.resSeekBar.max = 150
+        binding.resSeekBar.progress = selectedResolutionP
+        binding.resSeekBar.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                    selectedResolutionP = progress.coerceIn(1, 150)
+                    updateResolutionLabel()
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
             }
-        }
+        )
 
+        binding.fpsSeekBar.min = 5
+        binding.fpsSeekBar.max = 30
         binding.fpsSeekBar.progress = selectedFps
 
         binding.fpsSeekBar.setOnSeekBarChangeListener(
@@ -115,7 +112,7 @@ class MainActivity : AppCompatActivity() {
                     progress: Int,
                     fromUser: Boolean
                 ) {
-                    selectedFps = progress.coerceIn(8, 25)
+                    selectedFps = progress.coerceIn(5, 30)
                     updateFpsLabel()
                 }
 
@@ -138,8 +135,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateResolutionLabel() {
-        binding.resLabel.text =
-            "${resolutionPresets[resolutionIndex]}p"
+        binding.resLabel.text = "${selectedResolutionP}p"
+    }
+
+    private fun setMode(video: Boolean) {
+        if (isRecording) {
+            Toast.makeText(this, "Hentikan rekaman dulu", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isVideoMode == video) return
+        isVideoMode = video
+        updateModeLabel()
+        rebindCamera()
     }
 
     private fun updateFpsLabel() {
@@ -147,8 +154,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateModeLabel() {
-        binding.btnModeToggle.text =
-            if (isVideoMode) "VIDEO" else "PHOTO"
+        binding.btnPhotoMode.isSelected = !isVideoMode
+        binding.btnVideoMode.isSelected = isVideoMode
+        binding.btnPhotoMode.alpha = if (isVideoMode) 0.55f else 1f
+        binding.btnVideoMode.alpha = if (isVideoMode) 1f else 0.55f
+        binding.fpsSeekBar.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
+        binding.fpsLabel.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
+        binding.flashLabel.text = if (isVideoMode) "3GP • AMR-NB" else "JPEG • JPG"
     }
 
     private fun hasCameraPermission(): Boolean {
@@ -235,7 +247,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun takePhoto() {
         val capture = imageCapture ?: return
-        val targetHeightP = resolutionPresets[resolutionIndex]
+        val targetHeightP = selectedResolutionP
 
         capture.takePicture(
             ContextCompat.getMainExecutor(this),
