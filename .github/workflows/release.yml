@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag to publish (for example v1.0.0)"
+        description: "Release tag to publish (for example v1.2.0)"
         required: true
-        default: "v1.0.0"
+        default: "v1.2.0"
 
 permissions:
   contents: write
@@ -33,11 +33,17 @@ jobs:
           gradle-version: "8.7"
       - name: Build signed ARM64 release APK
         run: gradle assembleRelease --no-daemon
-      - name: Upload APK artifact
+      - name: Generate SHA-256 checksum
+        run: |
+          cd app/build/outputs/apk/release
+          sha256sum app-release.apk > app-release.apk.sha256
+      - name: Upload APK and checksum artifact
         uses: actions/upload-artifact@v4
         with:
           name: LoFiCam-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release.apk.sha256
           if-no-files-found: error
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
@@ -46,4 +52,19 @@ jobs:
           target_commitish: main
           name: LoFiCam ${{ inputs.release_tag || github.ref_name }}
           generate_release_notes: true
-          files: app/build/outputs/apk/release/app-release.apk
+          body: |
+            ## LoFiCam 1.2.0
+
+            - Retro minimal interface
+            - Photo and video modes
+            - Video output selection: MP4 or 3GP
+            - Configurable video resolution output (1p-150p selector; encoder minimum applies)
+            - Configurable recording FPS where supported by the camera
+            - Release APK built with R8 and resource shrinking
+
+            **Compatibility:** Android 13+ (API 33), ARM64.
+
+            **Signing note:** This repository currently uses Android's debug signing configuration for sideload testing. Do not treat this APK as a Play Store production-signed build. Keep the signing key consistent for future in-place app updates.
+          files: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release.apk.sha256
