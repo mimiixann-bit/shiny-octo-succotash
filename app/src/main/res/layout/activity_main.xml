@@ -28,69 +28,96 @@
     <LinearLayout
         android:id="@+id/controlsBar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:background="@color/black"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingHorizontal="12dp"
+        android:layout_height="112dp"
+        android:background="#09070D"
+        android:orientation="vertical"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="4dp"
         app:layout_constraintBottom_toTopOf="@id/bottomBar">
 
-        <Button
-            android:id="@+id/btnModeToggle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="PHOTO"
-            android:textSize="12sp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:background="#21172D"
+            android:padding="3dp">
 
-        <SeekBar
-            android:id="@+id/fpsSeekBar"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            <Button
+                android:id="@+id/btnPhotoMode"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:minHeight="0dp"
+                android:text="PHOTO"
+                android:textColor="#F0DCFF"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnVideoMode"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:minHeight="0dp"
+                android:text="VIDEO"
+                android:textColor="#F0DCFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginHorizontal="8dp"
-            android:min="8"
-            android:max="25"
-            android:progress="15" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/fpsLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="15 FPS"
-            android:textColor="@color/white"
-            android:textSize="12sp" />
+            <TextView
+                android:id="@+id/resLabel"
+                android:layout_width="42dp"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="75p"
+                android:textColor="#D9B7FF"
+                android:textStyle="bold"
+                android:textSize="12sp" />
 
+            <SeekBar
+                android:id="@+id/resSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="150"
+                android:progress="75" />
+
+            <SeekBar
+                android:id="@+id/fpsSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:min="5"
+                android:max="30"
+                android:progress="15" />
+
+            <TextView
+                android:id="@+id/fpsLabel"
+                android:layout_width="48dp"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="15 FPS"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="match_parent"
-        android:layout_height="120dp"
-        android:background="@color/black"
+        android:layout_height="104dp"
+        android:background="#09070D"
         android:gravity="center"
         android:orientation="horizontal"
         app:layout_constraintBottom_toBottomOf="parent">
-
-        <TextView
-            android:id="@+id/resLabel"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:clickable="true"
-            android:focusable="true"
-            android:text="300p"
-            android:textColor="@color/accent"
-            android:textStyle="bold"
-            android:textSize="14sp" />
-
-        <ImageButton
-            android:id="@+id/btnShutter"
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:layout_weight="0"
-            android:background="@drawable/shutter_button"
-            android:contentDescription="Shutter" />
 
         <TextView
             android:id="@+id/flashLabel"
@@ -98,10 +125,24 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="FLASH"
-            android:textColor="@color/white"
-            android:textSize="14sp" />
+            android:text="JPEG • JPG"
+            android:textColor="#D9B7FF"
+            android:textSize="11sp" />
 
+        <ImageButton
+            android:id="@+id/btnShutter"
+            android:layout_width="76dp"
+            android:layout_height="76dp"
+            android:background="@drawable/shutter_button"
+            android:contentDescription="Ambil foto atau mulai/berhenti merekam" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="LOFICAM"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp" />
     </LinearLayout>
-
 </androidx.constraintlayout.widget.ConstraintLayout>
