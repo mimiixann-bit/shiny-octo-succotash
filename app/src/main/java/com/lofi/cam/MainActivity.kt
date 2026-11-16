@@ -14,16 +14,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.camera.camera2.interop.Camera2Interop
-import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CaptureRequest
 import android.util.Range
 import android.util.Size
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
-import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
@@ -231,36 +228,17 @@ class MainActivity : AppCompatActivity() {
                     )
                     .build()
 
-                val recorder = Recorder.Builder()
-                    .setQualitySelector(QualitySelector.from(Quality.SD))
-                    .build()
+                // Let ResolutionSelector choose the closest supported video size.
+                val recorder = Recorder.Builder().build()
                 val captureBuilder = VideoCapture.Builder(recorder)
                     .setResolutionSelector(resolutionSelector)
 
-                // Request the closest FPS range supported by the camera, rather than
-                // only changing the label in the UI.
-                val fpsRanges = try {
-                    Camera2CameraInfo.from(provider.getCameraInfo(selector))
-                        .getCameraCharacteristic(
-                            CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES
-                        )?.toList().orEmpty()
-                } catch (_: Exception) {
-                    emptyList()
-                }
-                val chosenRange = fpsRanges
-                    .filter { it.lower <= selectedFps && it.upper >= selectedFps }
-                    .minByOrNull { it.upper - it.lower }
-                    ?: fpsRanges.minByOrNull {
-                        kotlin.math.abs(it.upper - selectedFps) + kotlin.math.abs(it.lower - selectedFps)
-                    }
-
-                if (chosenRange != null) {
-                    Camera2Interop.Extender(captureBuilder)
-                        .setCaptureRequestOption(
-                            CameraCharacteristics.CONTROL_AE_TARGET_FPS_RANGE,
-                            chosenRange
-                        )
-                }
+                // Request the selected frame rate. Hardware may adjust unsupported rates.
+                Camera2Interop.Extender(captureBuilder)
+                    .setCaptureRequestOption(
+                        CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                        Range(selectedFps, selectedFps)
+                    )
 
                 val capture = captureBuilder.build()
                 val camera = provider.bindToLifecycle(
