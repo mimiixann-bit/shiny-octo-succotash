@@ -1,0 +1,21 @@
+# Changelog
+
+## 1.1.0 - 2026-11-16
+
+### Added
+- ARM64-only APK packaging and explicit app version metadata.
+- Video resolution and frame-rate target controls through CameraX.
+- GitHub Actions workflow for tagged APK releases.
+- Documentation of compatibility, current capabilities, and known limitations.
+
+### Fixed
+- Photo capture now saves a JPEG file before processing, avoiding attempts to decode YUV camera planes as JPEG.
+- Photo processing keeps the intended low-resolution output instead of allocating several full-sensor-size bitmaps.
+- Photo gallery writes now report errors and remove incomplete MediaStore entries.
+- 3GP output is validated after muxer finalization.
+
+### Known limitations
+- Camera hardware may choose a nearby supported video size or frame rate rather than the exact slider value.
+- Video is remuxed into 3GP; it does not yet receive the photo grain, vignette, or color-grade effects.
+- CI APK is debug-key signed for sideload testing and is not a Play Store production build.
+- A successful CI build is not a substitute for physical-device testing.
