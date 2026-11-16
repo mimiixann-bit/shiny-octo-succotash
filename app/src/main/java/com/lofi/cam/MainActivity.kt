@@ -293,6 +293,7 @@ class MainActivity : AppCompatActivity() {
         val targetRotation = binding.previewView.display?.rotation ?: Surface.ROTATION_0
         val preview = Preview.Builder()
             .setTargetRotation(targetRotation)
+            .setTargetAspectRatio(if (selectedAspectRatio == "4:3") AspectRatio.RATIO_4_3 else AspectRatio.RATIO_16_9)
             .build().also {
                 it.setSurfaceProvider(binding.previewView.surfaceProvider)
             }
