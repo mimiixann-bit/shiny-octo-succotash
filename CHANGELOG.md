@@ -39,3 +39,5 @@
 ### Notes
 - 1p-15p selections map to a 16-pixel encoder-safe minimum; actual output is subject to encoder constraints.
 - APK size is optimized with R8 and resource shrinking. The build is not padded to an arbitrary 20 MB target.
+
+- Added pixel-linked crunchy audio processing for low-resolution video exports (build validation pending).
