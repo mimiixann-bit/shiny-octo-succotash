@@ -11,6 +11,8 @@ import android.Manifest.permission.ACCESS_FINE_LOCATION
 import android.Manifest.permission.ACCESS_COARSE_LOCATION
 import androidx.exifinterface.media.ExifInterface
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.view.Surface
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
@@ -58,6 +60,7 @@ class MainActivity : AppCompatActivity() {
     private var hdMode = false
     private var geotagEnabled = false
     private var selectedZoomFactor = 1f
+    private var selectedAspectRatio = "9:16"
     private var currentCamera: Camera? = null
     private val recordingSegments = mutableListOf<File>()
     private var switchLensAfterSegment = false
@@ -136,6 +139,15 @@ class MainActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
+        binding.aspectRatioGroup.check(R.id.ratio916)
+        binding.aspectRatioGroup.setOnCheckedChangeListener { _, checkedId ->
+            selectedAspectRatio = when (checkedId) {
+                R.id.ratio169 -> "16:9"
+                R.id.ratio43 -> "4:3"
+                else -> "9:16"
+            }
+        }
+
         binding.formatGroup.check(R.id.format3gp)
         binding.formatGroup.setOnCheckedChangeListener { _, checkedId ->
             selectedVideoFormat = if (checkedId == R.id.formatMp4) "MP4" else "3GP"
@@ -278,9 +290,12 @@ class MainActivity : AppCompatActivity() {
 
         provider.unbindAll()
 
-        val preview = Preview.Builder().build().also {
-            it.setSurfaceProvider(binding.previewView.surfaceProvider)
-        }
+        val targetRotation = binding.previewView.display?.rotation ?: Surface.ROTATION_0
+        val preview = Preview.Builder()
+            .setTargetRotation(targetRotation)
+            .build().also {
+                it.setSurfaceProvider(binding.previewView.surfaceProvider)
+            }
 
         val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
@@ -290,6 +305,10 @@ class MainActivity : AppCompatActivity() {
                 // output size is applied later by Media3 transcoding.
                 val recorder = Recorder.Builder().build()
                 val captureBuilder = VideoCapture.Builder(recorder)
+                    .setTargetRotation(targetRotation)
+                    .setTargetAspectRatio(
+                        if (selectedAspectRatio == "4:3") AspectRatio.RATIO_4_3 else AspectRatio.RATIO_16_9
+                    )
 
                 // Request the selected frame rate. Hardware may adjust unsupported rates.
                 Camera2Interop.Extender(captureBuilder)
@@ -312,6 +331,10 @@ class MainActivity : AppCompatActivity() {
 
             } else {
                 val capture = ImageCapture.Builder()
+                    .setTargetRotation(targetRotation)
+                    .setTargetAspectRatio(
+                        if (selectedAspectRatio == "4:3") AspectRatio.RATIO_4_3 else AspectRatio.RATIO_16_9
+                    )
                     .setCaptureMode(
                         ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
                     )
@@ -354,12 +377,16 @@ class MainActivity : AppCompatActivity() {
                     var source: android.graphics.Bitmap? = null
                     var result: android.graphics.Bitmap? = null
                     try {
-                        source = BitmapFactory.decodeFile(rawFile.absolutePath)
+                        val decoded = BitmapFactory.decodeFile(rawFile.absolutePath)
                             ?: throw IllegalStateException("Foto kamera tidak dapat dibaca")
+                        source = rotateBitmapFromExif(decoded, rawFile)
+                        if (source !== decoded) decoded.recycle()
                         val zoomed = cropBitmapForZoom(source, selectedZoomFactor)
-                        result = if (hdMode && filterIndex == 4) zoomed else LoFiProcessor.process(zoomed, if (targetHeightP == 0) zoomed.height else targetHeightP, filterIndex)
+                        val framed = cropBitmapToAspectRatio(zoomed, selectedAspectRatio)
+                        result = if (hdMode && filterIndex == 4) framed else LoFiProcessor.process(framed, if (targetHeightP == 0) framed.height else targetHeightP, filterIndex)
                         saveImageToGallery(requireNotNull(result))
-                        if (zoomed !== source && zoomed !== result) zoomed.recycle()
+                        if (framed !== zoomed && framed !== result) framed.recycle()
+                        if (zoomed !== source && zoomed !== framed && zoomed !== result) zoomed.recycle()
                     } catch (e: Exception) {
                         val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
                             ?: e.javaClass.simpleName
@@ -477,7 +504,8 @@ class MainActivity : AppCompatActivity() {
                     format,
                     filterIndex,
                     selectedZoomFactor,
-                    if (geotagEnabled && hasLocationPermission()) getLastKnownCoordinates() else null
+                    if (geotagEnabled && hasLocationPermission()) getLastKnownCoordinates() else null,
+                    selectedAspectRatio
                 )
                 val completedFile = requireNotNull(outFile)
                 require(completedFile.exists() && completedFile.length() > 0L) { "File hasil tidak terbentuk" }
@@ -542,6 +570,33 @@ class MainActivity : AppCompatActivity() {
             val reason = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
             Toast.makeText(this, "Gagal menyimpan foto: $reason", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun rotateBitmapFromExif(bitmap: android.graphics.Bitmap, file: File): android.graphics.Bitmap {
+        val orientation = ExifInterface(file.absolutePath).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.preScale(-1f, 1f); matrix.postRotate(90f) }
+            ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.preScale(-1f, 1f); matrix.postRotate(270f) }
+            else -> return bitmap
+        }
+        return android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    private fun cropBitmapToAspectRatio(source: android.graphics.Bitmap, ratio: String): android.graphics.Bitmap {
+        val target = when (ratio) { "16:9" -> 16f / 9f; "4:3" -> 4f / 3f; else -> 9f / 16f }
+        val current = source.width.toFloat() / source.height.toFloat()
+        if (kotlin.math.abs(current - target) < 0.01f) return source
+        val width: Int
+        val height: Int
+        if (current > target) { height = source.height; width = (height * target).toInt().coerceIn(1, source.width) }
+        else { width = source.width; height = (width / target).toInt().coerceIn(1, source.height) }
+        return android.graphics.Bitmap.createBitmap(source, (source.width - width) / 2, (source.height - height) / 2, width, height)
     }
 
     private fun cropBitmapForZoom(source: android.graphics.Bitmap, zoom: Float): android.graphics.Bitmap {
