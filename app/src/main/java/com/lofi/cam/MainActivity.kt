@@ -174,7 +174,9 @@ class MainActivity : AppCompatActivity() {
         binding.btnVideoMode.alpha = if (isVideoMode) 1f else 0.55f
         binding.fpsSeekBar.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
         binding.fpsLabel.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
-        binding.flashLabel.text = if (isVideoMode) "3GP • AMR-NB" else "JPEG • JPG"
+        binding.flashLabel.text = if (isVideoMode) "VIDEO • 3GP" else "PHOTO • JPEG"
+        binding.resSeekBar.isEnabled = !isRecording
+        binding.fpsSeekBar.isEnabled = isVideoMode && !isRecording
     }
 
     private fun hasCameraPermission(): Boolean {
