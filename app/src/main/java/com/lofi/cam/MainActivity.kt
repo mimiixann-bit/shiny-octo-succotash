@@ -4,6 +4,12 @@ package com.lofi.cam
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.net.Uri
+import android.location.LocationManager
+import android.Manifest.permission.ACCESS_FINE_LOCATION
+import android.Manifest.permission.ACCESS_COARSE_LOCATION
+import androidx.exifinterface.media.ExifInterface
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
@@ -46,6 +52,12 @@ class MainActivity : AppCompatActivity() {
 
     private var isVideoMode = false
     private var isRecording = false
+    private var lensFacing = CameraSelector.LENS_FACING_BACK
+    private var flashMode = ImageCapture.FLASH_MODE_OFF
+    private var filterIndex = 0
+    private var hdMode = false
+    private var currentCamera: Camera? = null
+    private val filters = arrayOf("RETRO", "WARM", "B&W", "COOL", "ORIGINAL")
 
     private val requestPermissions =
         registerForActivityResult(
@@ -79,6 +91,30 @@ class MainActivity : AppCompatActivity() {
         updateResolutionLabel()
         updateFpsLabel()
         updateModeLabel()
+        binding.btnLens.setOnClickListener { switchLens() }
+        binding.btnFlash.setOnClickListener { cycleFlash() }
+        binding.btnGallery.setOnClickListener { openLatestMedia() }
+        binding.btnFilter.setOnClickListener {
+            filterIndex = (filterIndex + 1) % filters.size
+            binding.btnFilter.text = filters[filterIndex]
+        }
+        binding.btnHd.setOnClickListener {
+            hdMode = !hdMode
+            binding.btnHd.text = if (hdMode) "HD ON" else "HD OFF"
+            binding.resSeekBar.isEnabled = !hdMode && !isRecording
+        }
+        binding.zoomSeekBar.max = 100
+        binding.zoomSeekBar.progress = 0
+        binding.zoomSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                val maxZoom = currentCamera?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f
+                val ratio = 1f + (maxZoom - 1f) * progress / 100f
+                currentCamera?.cameraControl?.setZoomRatio(ratio)
+                binding.zoomLabel.text = String.format(Locale.US, "%.1fx", ratio)
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
         binding.formatGroup.check(R.id.format3gp)
         binding.formatGroup.setOnCheckedChangeListener { _, checkedId ->
             selectedVideoFormat = if (checkedId == R.id.formatMp4) "MP4" else "3GP"
@@ -182,6 +218,8 @@ class MainActivity : AppCompatActivity() {
         binding.fpsLabel.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
         binding.formatGroup.visibility = if (isVideoMode) android.view.View.VISIBLE else android.view.View.GONE
         binding.flashLabel.text = if (isVideoMode) "VIDEO • $selectedVideoFormat" else "PHOTO • JPEG"
+        binding.btnFlash.isEnabled = lensFacing == CameraSelector.LENS_FACING_BACK
+        binding.resSeekBar.isEnabled = !hdMode && !isRecording
         binding.resSeekBar.isEnabled = !isRecording
         binding.fpsSeekBar.isEnabled = isVideoMode && !isRecording
         binding.formatGroup.isEnabled = isVideoMode && !isRecording
@@ -222,7 +260,7 @@ class MainActivity : AppCompatActivity() {
             it.setSurfaceProvider(binding.previewView.surfaceProvider)
         }
 
-        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+        val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
         try {
             if (isVideoMode) {
@@ -246,6 +284,7 @@ class MainActivity : AppCompatActivity() {
                     capture
                 )
 
+                currentCamera = camera
                 videoCapture = capture
                 imageCapture = null
 
@@ -254,15 +293,15 @@ class MainActivity : AppCompatActivity() {
                     .setCaptureMode(
                         ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
                     )
+                    .setFlashMode(flashMode)
                     .build()
 
-                provider.bindToLifecycle(
+                currentCamera = provider.bindToLifecycle(
                     this,
                     selector,
                     preview,
                     capture
                 )
-
                 imageCapture = capture
                 videoCapture = null
             }
@@ -281,7 +320,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Kamera foto belum siap. Coba lagi.", Toast.LENGTH_SHORT).show()
             return
         }
-        val targetHeightP = selectedResolutionP
+        val targetHeightP = if (hdMode) 0 else selectedResolutionP
         val rawFile = File(cacheDir, "photo_" + System.currentTimeMillis() + ".jpg")
         val options = ImageCapture.OutputFileOptions.Builder(rawFile).build()
 
@@ -295,7 +334,7 @@ class MainActivity : AppCompatActivity() {
                     try {
                         source = BitmapFactory.decodeFile(rawFile.absolutePath)
                             ?: throw IllegalStateException("Foto kamera tidak dapat dibaca")
-                        result = LoFiProcessor.process(source, targetHeightP)
+                        result = if (hdMode && filterIndex == 4) source.copy(source.config ?: android.graphics.Bitmap.Config.ARGB_8888, false) else LoFiProcessor.process(source, if (targetHeightP == 0) source.height else targetHeightP, filterIndex)
                         saveImageToGallery(result)
                     } catch (e: Exception) {
                         val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
@@ -456,12 +495,79 @@ class MainActivity : AppCompatActivity() {
                     throw IllegalStateException("Gagal mengodekan JPEG")
                 }
             }
+            if (hasLocationPermission()) addGeoTag(uri)
             Toast.makeText(this, "Foto tersimpan di Pictures/LoFiCam", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             contentResolver.delete(uri, null, null)
             val reason = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
             Toast.makeText(this, "Gagal menyimpan foto: $reason", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun addGeoTag(uri: Uri) {
+        try {
+            val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+            val location = manager.getProviders(true).mapNotNull { provider ->
+                try { manager.getLastKnownLocation(provider) } catch (_: SecurityException) { null }
+            }.maxByOrNull { it.time } ?: return
+            val temp = File(cacheDir, "geo_" + System.currentTimeMillis() + ".jpg")
+            contentResolver.openInputStream(uri)?.use { input -> temp.outputStream().use { input.copyTo(it) } }
+            val exif = ExifInterface(temp.absolutePath)
+            exif.setLatLong(location.latitude, location.longitude)
+            exif.saveAttributes()
+            contentResolver.openOutputStream(uri, "wt")?.use { output -> temp.inputStream().use { it.copyTo(output) } }
+            temp.delete()
+        } catch (_: Exception) { }
+    }
+
+    private fun switchLens() {
+        if (isRecording) {
+            Toast.makeText(this, "Hentikan rekaman dulu untuk mengganti kamera", Toast.LENGTH_LONG).show()
+            return
+        }
+        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK)
+            CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+        binding.btnLens.text = if (lensFacing == CameraSelector.LENS_FACING_FRONT) "FRONT" else "BACK"
+        rebindCamera()
+    }
+
+    private fun cycleFlash() {
+        flashMode = when (flashMode) {
+            ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
+            ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
+            else -> ImageCapture.FLASH_MODE_OFF
+        }
+        binding.btnFlash.text = when (flashMode) {
+            ImageCapture.FLASH_MODE_AUTO -> "FLASH AUTO"
+            ImageCapture.FLASH_MODE_ON -> "FLASH ON"
+            else -> "FLASH OFF"
+        }
+        currentCamera?.let { camera ->
+            if (isVideoMode && camera.cameraInfo.hasFlashUnit())
+                camera.cameraControl.enableTorch(flashMode != ImageCapture.FLASH_MODE_OFF)
+        }
+        imageCapture?.flashMode = flashMode
+    }
+
+    private fun openLatestMedia() {
+        val image = contentResolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Images.Media._ID), "${MediaStore.Images.Media.RELATIVE_PATH}=?",
+            arrayOf("Pictures/LoFiCam/"), "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { c ->
+            if (c.moveToFirst()) Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(0).toString()) else null
+        }
+        val video = contentResolver.query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Video.Media._ID), "${MediaStore.Video.Media.RELATIVE_PATH}=?",
+            arrayOf("Movies/LoFiCam/"), "${MediaStore.Video.Media.DATE_ADDED} DESC")?.use { c ->
+            if (c.moveToFirst()) Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, c.getLong(0).toString()) else null
+        }
+        val uri = image ?: video
+        if (uri == null) startActivity(Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI))
+        else startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, if (image != null) "image/*" else "video/*")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
     }
 
     private fun saveVideoToGallery(file: File, format: String): Boolean {
