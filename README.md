@@ -6,8 +6,8 @@ Kamera Android bergaya digital/lo-fi retro. Proyek ini masih dalam tahap **beta*
 
 - Preview kamera belakang menggunakan CameraX.
 - Mode foto dengan efek downscale, color grading, grain, vignette, dan tanggal.
-- Mode video dengan target resolusi dan FPS yang diminta ke kamera.
-- Video direkam sebagai MP4 sementara, lalu dicoba dimasukkan ke kontainer 3GP.
+- Mode video dengan resolusi keluaran 1p–150p (diproses setelah rekaman) dan target FPS 5–30.\n- Pilihan format video tersimpan: MP4 atau 3GP.
+- Video direkam sementara sebagai MP4, diubah ukurannya dengan Media3, lalu diekspor sebagai MP4 atau dimasukkan ke kontainer 3GP.
 - Simpan foto ke `Pictures/LoFiCam` dan video ke `Movies/LoFiCam`.
 - APK hanya untuk ABI `arm64-v8a`, Android 13/API 33 ke atas.
 
@@ -20,8 +20,8 @@ Kamera Android bergaya digital/lo-fi retro. Proyek ini masih dalam tahap **beta*
 
 ## Kekurangan dan batasan yang diketahui
 
-- Nilai resolusi/FPS pada mode video adalah **target**, bukan jaminan. Kamera HP hanya mendukung kombinasi ukuran dan frame rate tertentu; perangkat dapat memilih nilai terdekat atau menolak kombinasi tertentu.
-- Efek lo-fi lanjutan saat ini diterapkan pada foto. Video masih melalui proses remux ke 3GP, bukan proses ulang tiap frame; karena itu video belum mendapat pixelation, grain, atau filter retro yang sama seperti foto.
+- FPS 5–30 adalah permintaan ke kamera dan dapat disesuaikan perangkat. Resolusi keluaran diproses setelah rekaman; pilihan 1p–15p menggunakan batas encoder minimum sekitar 16 piksel.
+- Efek grain/vignette/color-grade foto belum diterapkan ke video. Video di-encode ulang untuk ukuran keluaran, lalu diekspor sesuai format pilihan.
 - 3GP tidak mendukung semua kombinasi codec. Jika codec video/audio dari perangkat tidak cocok, penyimpanan video dapat gagal.
 - Kualitas audio video mengikuti codec dan konfigurasi perekaman perangkat; label 3GP bukan jaminan audio AMR-NB.
 - Belum ada pengujian otomatis pada beragam model HP, kamera depan, pergantian orientasi, atau rekaman berdurasi panjang.
@@ -34,7 +34,7 @@ Kamera Android bergaya digital/lo-fi retro. Proyek ini masih dalam tahap **beta*
 - Kamera belakang dan izin kamera diperlukan.
 - Izin mikrofon opsional; tanpa izin ini video direkam tanpa audio.
 
-## Build dan unduh
+## Build dan unduh\n\nRelease build menggunakan R8 dan resource shrinking untuk mengurangi ukuran APK. Ukuran 20 MB bukan target minimum; APK tidak sengaja diperbesar dengan data kosong karena hanya menambah unduhan dan pemakaian penyimpanan.\n
 
 GitHub Actions menjalankan `gradle assembleDebug` setiap ada push ke `main`. Jika build berhasil, APK tersedia sebagai artifact bernama **LoFiCam-debug-apk** pada tab Actions.
 
