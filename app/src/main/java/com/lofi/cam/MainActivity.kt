@@ -7,26 +7,41 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import com.lofi.cam.databinding.ActivityMainBinding
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+
     private var imageCapture: ImageCapture? = null
+    private var videoCapture: VideoCapture<Recorder>? = null
+    private var activeRecording: Recording? = null
     private var cameraProvider: ProcessCameraProvider? = null
 
-    // Pilihan resolusi, semua di bawah 500p. Default index 2 = 300p.
     private val resolutionPresets = listOf(120, 180, 240, 300, 360, 480)
     private var resolutionIndex = 2
+    private var selectedFps = 15
+
+    private var isVideoMode = false
+    private var isRecording = false
 
     private val requestPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -41,14 +56,37 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         updateResolutionLabel()
+        updateFpsLabel()
+        updateModeLabel()
 
-        binding.btnShutter.setOnClickListener { takePhoto() }
+        binding.btnShutter.setOnClickListener {
+            if (isVideoMode) toggleRecording() else takePhoto()
+        }
 
-        // Tap label resolusi untuk ganti preset (120p, 180p, 240p, 300p, 360p, 480p)
         binding.resLabel.setOnClickListener {
             resolutionIndex = (resolutionIndex + 1) % resolutionPresets.size
             updateResolutionLabel()
         }
+
+        binding.btnModeToggle.setOnClickListener {
+            if (isRecording) {
+                Toast.makeText(this, "Hentikan rekaman dulu", Toast.LENGTH_SHORT).show()
+            } else {
+                isVideoMode = !isVideoMode
+                updateModeLabel()
+                rebindCamera()
+            }
+        }
+
+        binding.fpsSeekBar.progress = selectedFps
+        binding.fpsSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                selectedFps = progress.coerceIn(8, 25)
+                updateFpsLabel()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
 
         if (hasCameraPermission()) {
             startCamera()
@@ -61,6 +99,14 @@ class MainActivity : AppCompatActivity() {
         binding.resLabel.text = "${resolutionPresets[resolutionIndex]}p"
     }
 
+    private fun updateFpsLabel() {
+        binding.fpsLabel.text = "$selectedFps FPS"
+    }
+
+    private fun updateModeLabel() {
+        binding.btnModeToggle.text = if (isVideoMode) "VIDEO" else "PHOTO"
+    }
+
     private fun hasCameraPermission() =
         ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
@@ -68,26 +114,40 @@ class MainActivity : AppCompatActivity() {
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
-            val provider = providerFuture.get()
-            cameraProvider = provider
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(binding.previewView.surfaceProvider)
-            }
-
-            imageCapture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                .build()
-
-            val selector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            try {
-                provider.unbindAll()
-                provider.bindToLifecycle(this, selector, preview, imageCapture)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Gagal membuka kamera: ${e.message}", Toast.LENGTH_LONG).show()
-            }
+            cameraProvider = providerFuture.get()
+            rebindCamera()
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun rebindCamera() {
+        val provider = cameraProvider ?: return
+        provider.unbindAll()
+
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(binding.previewView.surfaceProvider)
+        }
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        try {
+            if (isVideoMode) {
+                val recorder = Recorder.Builder()
+                    .setQualitySelector(QualitySelector.from(Quality.SD))
+                    .build()
+                val capture = VideoCapture.withOutput(recorder)
+                provider.bindToLifecycle(this, selector, preview, capture)
+                videoCapture = capture
+                imageCapture = null
+            } else {
+                val capture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .build()
+                provider.bindToLifecycle(this, selector, preview, capture)
+                imageCapture = capture
+                videoCapture = null
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Gagal membuka kamera: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun takePhoto() {
@@ -105,7 +165,7 @@ class MainActivity : AppCompatActivity() {
                     image.close()
 
                     val result = LoFiProcessor.process(bitmap, targetHeightP)
-                    saveToGallery(result)
+                    saveImageToGallery(result)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -119,7 +179,53 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun saveToGallery(bitmap: android.graphics.Bitmap) {
+    private fun toggleRecording() {
+        if (isRecording) {
+            activeRecording?.stop()
+            activeRecording = null
+            isRecording = false
+            return
+        }
+
+        val capture = videoCapture ?: return
+        val rawFile = File(cacheDir, "raw_${System.currentTimeMillis()}.mp4")
+        val outputOptions = FileOutputOptions.Builder(rawFile).build()
+
+        activeRecording = capture.output
+            .prepareRecording(this, outputOptions)
+            .start(ContextCompat.getMainExecutor(this)) { event ->
+                if (event is VideoRecordEvent.Finalize) {
+                    isRecording = false
+                    if (!event.hasError()) {
+                        processRecordedVideo(rawFile)
+                    } else {
+                        Toast.makeText(this, "Rekaman gagal", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        isRecording = true
+    }
+
+    private fun processRecordedVideo(rawFile: File) {
+        val targetHeightP = resolutionPresets[resolutionIndex]
+        val fps = selectedFps
+        Toast.makeText(this, "Memproses video...", Toast.LENGTH_SHORT).show()
+
+        Thread {
+            try {
+                val outFile = File(cacheDir, "loficam_${System.currentTimeMillis()}.3gp")
+                VideoLoFiProcessor.convert(rawFile.absolutePath, outFile.absolutePath, targetHeightP, fps)
+                rawFile.delete()
+                runOnUiThread { saveVideoToGallery(outFile) }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Gagal memproses video: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun saveImageToGallery(bitmap: android.graphics.Bitmap) {
         val name = "LOFICAM_" +
             SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(java.util.Date())
 
@@ -138,14 +244,39 @@ class MainActivity : AppCompatActivity() {
                 bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, stream)
                 out.write(stream.toByteArray())
             }
-            Toast.makeText(this, "Tersimpan di galeri", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Foto tersimpan di galeri", Toast.LENGTH_SHORT).show()
         } ?: run {
             Toast.makeText(this, "Gagal menyimpan foto", Toast.LENGTH_SHORT).show()
         }
     }
 
+    private fun saveVideoToGallery(file: File) {
+        val name = "LOFICAM_" +
+            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(java.util.Date())
+
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, name)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/3gpp")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/LoFiCam")
+            }
+        }
+
+        val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+        uri?.let {
+            contentResolver.openOutputStream(it)?.use { out ->
+                file.inputStream().use { input -> input.copyTo(out) }
+            }
+            file.delete()
+            Toast.makeText(this, "Video tersimpan di galeri", Toast.LENGTH_SHORT).show()
+        } ?: run {
+            Toast.makeText(this, "Gagal menyimpan video", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        activeRecording?.stop()
         cameraProvider?.unbindAll()
     }
 }
