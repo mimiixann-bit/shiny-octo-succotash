@@ -337,7 +337,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processRecordedVideo(rawFile: File) {
-        val targetHeightP = resolutionPresets[resolutionIndex]
+        val targetHeightP = selectedResolutionP
         val fps = selectedFps
 
         Toast.makeText(
