@@ -225,7 +225,6 @@ class MainActivity : AppCompatActivity() {
         binding.flashLabel.text = if (isVideoMode) "VIDEO • $selectedVideoFormat" else "PHOTO • JPEG"
         binding.btnFlash.isEnabled = lensFacing == CameraSelector.LENS_FACING_BACK
         binding.resSeekBar.isEnabled = !hdMode && !isRecording
-        binding.resSeekBar.isEnabled = !isRecording
         binding.fpsSeekBar.isEnabled = isVideoMode && !isRecording
         binding.formatGroup.isEnabled = isVideoMode && !isRecording
         binding.format3gp.isEnabled = isVideoMode && !isRecording
