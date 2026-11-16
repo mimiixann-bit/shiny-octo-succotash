@@ -43,10 +43,15 @@ class MainActivity : AppCompatActivity() {
     private var isVideoMode = false
     private var isRecording = false
 
-    private val requestPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) startCamera() else {
+    private val requestPermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            if (results[Manifest.permission.CAMERA] == true) {
+                startCamera()
+            } else {
                 Toast.makeText(this, "Izin kamera dibutuhkan", Toast.LENGTH_LONG).show()
+            }
+            if (results[Manifest.permission.RECORD_AUDIO] != true) {
+                Toast.makeText(this, "Tanpa izin mikrofon, video tidak akan ada audio", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -91,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         if (hasCameraPermission()) {
             startCamera()
         } else {
-            requestPermission.launch(Manifest.permission.CAMERA)
+            requestPermissions.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
         }
     }
 
@@ -109,6 +114,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun hasCameraPermission() =
         ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun hasAudioPermission() =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
 
     private fun startCamera() {
@@ -191,18 +200,21 @@ class MainActivity : AppCompatActivity() {
         val rawFile = File(cacheDir, "raw_${System.currentTimeMillis()}.mp4")
         val outputOptions = FileOutputOptions.Builder(rawFile).build()
 
-        activeRecording = capture.output
-            .prepareRecording(this, outputOptions)
-            .start(ContextCompat.getMainExecutor(this)) { event ->
-                if (event is VideoRecordEvent.Finalize) {
-                    isRecording = false
-                    if (!event.hasError()) {
-                        processRecordedVideo(rawFile)
-                    } else {
-                        Toast.makeText(this, "Rekaman gagal", Toast.LENGTH_LONG).show()
-                    }
+        var pending = capture.output.prepareRecording(this, outputOptions)
+        if (hasAudioPermission()) {
+            pending = pending.withAudioEnabled()
+        }
+
+        activeRecording = pending.start(ContextCompat.getMainExecutor(this)) { event ->
+            if (event is VideoRecordEvent.Finalize) {
+                isRecording = false
+                if (!event.hasError()) {
+                    processRecordedVideo(rawFile)
+                } else {
+                    Toast.makeText(this, "Rekaman gagal", Toast.LENGTH_LONG).show()
                 }
             }
+        }
         isRecording = true
     }
 
@@ -265,6 +277,21 @@ class MainActivity : AppCompatActivity() {
         val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
         uri?.let {
             contentResolver.openOutputStream(it)?.use { out ->
+                file.inputStream().use { input -> input.copyTo(out) }
+            }
+            file.delete()
+            Toast.makeText(this, "Video tersimpan di galeri", Toast.LENGTH_SHORT).show()
+        } ?: run {
+            Toast.makeText(this, "Gagal menyimpan video", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        activeRecording?.stop()
+        cameraProvider?.unbindAll()
+    }
+}it)?.use { out ->
                 file.inputStream().use { input -> input.copyTo(out) }
             }
             file.delete()
