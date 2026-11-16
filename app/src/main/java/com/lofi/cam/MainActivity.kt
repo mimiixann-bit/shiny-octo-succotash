@@ -59,6 +59,8 @@ class MainActivity : AppCompatActivity() {
     private var currentCamera: Camera? = null
     private val filters = arrayOf("RETRO", "WARM", "B&W", "COOL", "ORIGINAL")
 
+    private val requestLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+
     private val requestPermissions =
         registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
@@ -91,6 +93,9 @@ class MainActivity : AppCompatActivity() {
         updateResolutionLabel()
         updateFpsLabel()
         updateModeLabel()
+        if (!hasLocationPermission()) {
+            requestLocationPermission.launch(arrayOf(ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION))
+        }
         binding.btnLens.setOnClickListener { switchLens() }
         binding.btnFlash.setOnClickListener { cycleFlash() }
         binding.btnGallery.setOnClickListener { openLatestMedia() }
@@ -419,7 +424,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processRecordedVideo(rawFile: File) {
-        val targetHeightP = selectedResolutionP
+        val targetHeightP = if (hdMode) 0 else selectedResolutionP
         val fps = selectedFps
         val format = selectedVideoFormat
         Toast.makeText(this, "Memproses video $format...", Toast.LENGTH_SHORT).show()
