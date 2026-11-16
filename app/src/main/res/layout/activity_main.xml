@@ -37,10 +37,12 @@
         <TextView
             android:id="@+id/resLabel"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="0.3MP"
+            android:clickable="true"
+            android:focusable="true"
+            android:text="300p"
             android:textColor="@color/accent"
             android:textStyle="bold"
             android:textSize="14sp" />
