@@ -278,43 +278,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun takePhoto() {
-        val capture = imageCapture ?: return
+        val capture = imageCapture ?: run {
+            Toast.makeText(this, "Kamera foto belum siap. Coba lagi.", Toast.LENGTH_SHORT).show()
+            return
+        }
         val targetHeightP = selectedResolutionP
+        val rawFile = File(cacheDir, "photo_" + System.currentTimeMillis() + ".jpg")
+        val options = ImageCapture.OutputFileOptions.Builder(rawFile).build()
 
         capture.takePicture(
+            options,
             ContextCompat.getMainExecutor(this),
-            object : ImageCapture.OnImageCapturedCallback() {
-
-                override fun onCaptureSuccess(image: ImageProxy) {
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    var source: android.graphics.Bitmap? = null
+                    var result: android.graphics.Bitmap? = null
                     try {
-                        val buffer = image.planes[0].buffer
-                        val bytes = ByteArray(buffer.remaining())
-                        buffer.get(bytes)
-
-                        val bitmap = BitmapFactory.decodeByteArray(
-                            bytes,
-                            0,
-                            bytes.size
-                        ) ?: return
-
-                        val result = LoFiProcessor.process(
-                            bitmap,
-                            targetHeightP
-                        )
-
+                        source = BitmapFactory.decodeFile(rawFile.absolutePath)
+                            ?: throw IllegalStateException("Foto kamera tidak dapat dibaca")
+                        result = LoFiProcessor.process(source, targetHeightP)
                         saveImageToGallery(result)
-
+                    } catch (e: Exception) {
+                        val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
+                            ?: e.javaClass.simpleName
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Gagal memproses foto: $reason",
+                            Toast.LENGTH_LONG
+                        ).show()
                     } finally {
-                        image.close()
+                        if (result !== source) result?.recycle()
+                        source?.recycle()
+                        rawFile.delete()
                     }
                 }
 
-                override fun onError(
-                    exception: ImageCaptureException
-                ) {
+                override fun onError(exception: ImageCaptureException) {
+                    rawFile.delete()
                     Toast.makeText(
                         this@MainActivity,
-                        "Gagal mengambil foto: ${exception.message}",
+                        "Gagal mengambil foto: " + exception.message,
                         Toast.LENGTH_LONG
                     ).show()
                 }
