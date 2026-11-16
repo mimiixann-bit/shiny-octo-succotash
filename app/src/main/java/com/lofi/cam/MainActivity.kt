@@ -13,9 +13,6 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
-import androidx.camera.camera2.interop.Camera2Interop
-import android.hardware.camera2.CaptureRequest
-import android.util.Range
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Recorder
@@ -228,12 +225,10 @@ class MainActivity : AppCompatActivity() {
                 val recorder = Recorder.Builder().build()
                 val captureBuilder = VideoCapture.Builder(recorder)
 
-                // Request the selected frame rate. Hardware may adjust unsupported rates.
-                Camera2Interop.Extender(captureBuilder)
-                    .setCaptureRequestOption(
-                        CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                        Range(selectedFps, selectedFps)
-                    )
+                // Do not force a camera2 FPS range here. Many devices do not expose
+                // every exact FPS value, and forcing an unsupported range can make
+                // CameraX fail while binding the video use case. The output FPS is
+                // applied safely during Media3 processing after recording.
 
                 val capture = captureBuilder.build()
                 val camera = provider.bindToLifecycle(
