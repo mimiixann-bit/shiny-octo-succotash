@@ -442,50 +442,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveVideoToGallery(file: File): Boolean {
-        val name = "LOFICAM_" +
-            SimpleDateFormat(
-                "yyyyMMdd_HHmmss",
-                Locale.getDefault()
-            ).format(java.util.Date())
+        val name = "LOFICAM_" + SimpleDateFormat(
+            "yyyyMMdd_HHmmss",
+            Locale.getDefault()
+        ).format(java.util.Date())
 
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, "$name.3gp")
             put(MediaStore.Video.Media.MIME_TYPE, "video/3gpp")
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(
-                    MediaStore.Video.Media.RELATIVE_PATH,
-                    "Movies/LoFiCam"
-                )
+                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/LoFiCam")
             }
         }
 
-        val uri = contentResolver.insert(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            values
-        )
+        val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            ?: return false
 
-        uri?.let {
-            contentResolver.openOutputStream(it)?.use { out ->
-                file.inputStream().use { input ->
-                    input.copyTo(out)
-                }
+        return try {
+            val output = contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Tidak bisa membuka penyimpanan galeri")
+            output.use { stream ->
+                file.inputStream().use { input -> input.copyTo(stream) }
             }
-
             file.delete()
-
+            Toast.makeText(this, "Video tersimpan di galeri", Toast.LENGTH_SHORT).show()
+            true
+        } catch (e: Exception) {
+            contentResolver.delete(uri, null, null)
             Toast.makeText(
                 this,
-                "Video tersimpan di galeri",
-                Toast.LENGTH_SHORT
+                "Gagal menyimpan video: ${e.localizedMessage ?: e.javaClass.simpleName}",
+                Toast.LENGTH_LONG
             ).show()
-
-        } ?: run {
-            Toast.makeText(
-                this,
-                "Gagal menyimpan video",
-                Toast.LENGTH_SHORT
-            ).show()
+            false
         }
     }
 
