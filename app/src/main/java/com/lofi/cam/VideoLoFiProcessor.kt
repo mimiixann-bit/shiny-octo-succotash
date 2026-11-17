@@ -106,3 +106,260 @@ object VideoLoFiProcessor {
                 val outIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000)
                 when {
                     outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                        if (!endOfStream) return
+                    }
+                    outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        videoTrackIndex = muxer.addTrack(encoder.outputFormat)
+                        muxer.start()
+                        muxerStarted = true
+                        writeBufferedAudio()
+                    }
+                    outIndex >= 0 -> {
+                        val encodedData = encoder.getOutputBuffer(outIndex)
+                        if (encodedData != null && bufferInfo.size > 0 && muxerStarted) {
+                            encodedData.position(bufferInfo.offset)
+                            encodedData.limit(bufferInfo.offset + bufferInfo.size)
+                            muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
+                        }
+                        encoder.releaseOutputBuffer(outIndex, false)
+                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                            return
+                        }
+                    }
+                }
+            }
+        }
+
+        val frameIntervalUs = 1_000_000L / targetFps
+        val frameIntervalMs = 1000L / targetFps
+        val durationUs = durationMs * 1000L
+        var t = 0L
+
+        while (t < durationUs) {
+            val frameStart = SystemClock.elapsedRealtime()
+            val rawFrame = retriever.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST)
+            if (rawFrame != null) {
+                val processed = LoFiProcessor.process(
+                    rawFrame, targetHeightP,
+                    filter = filter,
+                    noiseEnabled = noiseEnabled,
+                    stampTimestamp = dateMarkEnabled
+                )
+                val canvas = inputSurface.lockCanvas(null)
+                try {
+                    canvas.drawBitmap(processed, null, Rect(0, 0, outWidth, outHeight), null)
+                } finally {
+                    inputSurface.unlockCanvasAndPost(canvas)
+                }
+            }
+            drain(false)
+            val elapsed = SystemClock.elapsedRealtime() - frameStart
+            val sleepTime = frameIntervalMs - elapsed
+            if (sleepTime > 0) SystemClock.sleep(sleepTime)
+            t += frameIntervalUs
+        }
+
+        drain(true)
+
+        retriever.release()
+        encoder.stop()
+        encoder.release()
+        inputSurface.release()
+        if (muxerStarted) muxer.stop()
+        muxer.release()
+    }
+
+        // ---------- Audio: AAC -> PCM mono -> resample 8kHz -> hancurkan -> AMR-NB ----------
+
+    private fun decodeAndEncodeAudio(inputPath: String): Pair<MediaFormat, List<EncodedSample>>? {
+        val extractor = MediaExtractor()
+        extractor.setDataSource(inputPath)
+
+        var audioTrackIndex = -1
+        var inputFormat: MediaFormat? = null
+        for (i in 0 until extractor.trackCount) {
+            val fmt = extractor.getTrackFormat(i)
+            val mime = fmt.getString(MediaFormat.KEY_MIME) ?: continue
+            if (mime.startsWith("audio/")) {
+                audioTrackIndex = i
+                inputFormat = fmt
+                break
+            }
+        }
+        if (audioTrackIndex < 0 || inputFormat == null) {
+            extractor.release()
+            return null
+        }
+        extractor.selectTrack(audioTrackIndex)
+
+        val srcSampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+        val srcChannels = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+        val mime = inputFormat.getString(MediaFormat.KEY_MIME)!!
+
+        val decoder = MediaCodec.createDecoderByType(mime)
+        decoder.configure(inputFormat, null, null, 0)
+        decoder.start()
+
+        val pcmBuffer = ByteArrayOutputStream()
+        val bufferInfo = MediaCodec.BufferInfo()
+        var sawInputEOS = false
+        var sawOutputEOS = false
+
+        while (!sawOutputEOS) {
+            if (!sawInputEOS) {
+                val inIndex = decoder.dequeueInputBuffer(10_000)
+                if (inIndex >= 0) {
+                    val inputBuffer = decoder.getInputBuffer(inIndex)!!
+                    val sampleSize = extractor.readSampleData(inputBuffer, 0)
+                    if (sampleSize < 0) {
+                        decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        sawInputEOS = true
+                    } else {
+                        val pts = extractor.sampleTime
+                        decoder.queueInputBuffer(inIndex, 0, sampleSize, pts, 0)
+                        extractor.advance()
+                    }
+                }
+            }
+
+            val outIndex = decoder.dequeueOutputBuffer(bufferInfo, 10_000)
+            if (outIndex >= 0) {
+                val outputBuffer = decoder.getOutputBuffer(outIndex)
+                if (outputBuffer != null && bufferInfo.size > 0) {
+                    val chunk = ByteArray(bufferInfo.size)
+                    outputBuffer.position(bufferInfo.offset)
+                    outputBuffer.get(chunk)
+                    pcmBuffer.write(chunk)
+                }
+                decoder.releaseOutputBuffer(outIndex, false)
+                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                    sawOutputEOS = true
+                }
+            }
+        }
+
+        decoder.stop()
+        decoder.release()
+        extractor.release()
+
+        val monoPcm = toMono16Bit(pcmBuffer.toByteArray(), srcChannels)
+        val resampled = resampleTo8k(monoPcm, srcSampleRate)
+        val destroyed = degradeAudio(resampled)
+        return encodeToAmrNb(destroyed)
+    }
+
+    private fun toMono16Bit(pcm: ByteArray, channels: Int): ShortArray {
+        val totalSamples = pcm.size / 2
+        val shorts = ShortArray(totalSamples)
+        val bb = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until totalSamples) shorts[i] = bb.short
+        if (channels <= 1) return shorts
+
+        val frames = shorts.size / channels
+        val mono = ShortArray(frames)
+        for (f in 0 until frames) {
+            var sum = 0
+            for (c in 0 until channels) sum += shorts[f * channels + c]
+            mono[f] = (sum / channels).toShort()
+        }
+        return mono
+    }
+
+    private fun resampleTo8k(mono: ShortArray, srcRate: Int): ShortArray {
+        if (srcRate == 8000 || mono.isEmpty()) return mono
+        val ratio = srcRate.toDouble() / 8000.0
+        val outLen = (mono.size / ratio).toInt()
+        val out = ShortArray(outLen)
+        for (i in 0 until outLen) {
+            val srcIndex = (i * ratio).toInt().coerceIn(0, mono.size - 1)
+            out[i] = mono[srcIndex]
+        }
+        return out
+    }
+
+    private fun degradeAudio(pcm: ShortArray): ShortArray {
+        if (pcm.isEmpty()) return pcm
+        val rnd = Random(System.nanoTime())
+
+        val muffled = ShortArray(pcm.size)
+        var i = 0
+        while (i < pcm.size) {
+            val v = pcm[i]
+            muffled[i] = v
+            if (i + 1 < pcm.size) muffled[i + 1] = v
+            i += 2
+        }
+
+        val levels = 20
+        val step = (65536 / levels).coerceAtLeast(1)
+
+        return ShortArray(muffled.size) { idx ->
+            var v = muffled[idx].toInt()
+            v = (v * 3.2).toInt()
+            v = v.coerceIn(-32768, 32767)
+            v = (v / step) * step
+            v += rnd.nextInt(-500, 500)
+            v.coerceIn(-32768, 32767).toShort()
+        }
+    }
+
+    private fun encodeToAmrNb(pcm: ShortArray): Pair<MediaFormat, List<EncodedSample>> {
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AMR_NB, 8000, 1)
+        format.setInteger(MediaFormat.KEY_BIT_RATE, 4750)
+
+        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AMR_NB)
+        encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        encoder.start()
+
+        val frameSamples = 160
+        var sampleIndex = 0
+        var capturedFormat: MediaFormat? = null
+        val samples = mutableListOf<EncodedSample>()
+        val bufferInfo = MediaCodec.BufferInfo()
+        var inputDone = false
+
+        while (true) {
+            if (!inputDone) {
+                val inIndex = encoder.dequeueInputBuffer(10_000)
+                if (inIndex >= 0) {
+                    val inputBuffer = encoder.getInputBuffer(inIndex)!!
+                    inputBuffer.clear()
+                    if (sampleIndex < pcm.size) {
+                        val remaining = pcm.size - sampleIndex
+                        val count = minOf(frameSamples, remaining)
+                        for (i in 0 until count) inputBuffer.putShort(pcm[sampleIndex + i])
+                        val ptsUs = (sampleIndex.toLong() * 1_000_000L) / 8000L
+                        encoder.queueInputBuffer(inIndex, 0, count * 2, ptsUs, 0)
+                        sampleIndex += count
+                    } else {
+                        val ptsUs = (sampleIndex.toLong() * 1_000_000L) / 8000L
+                        encoder.queueInputBuffer(inIndex, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        inputDone = true
+                    }
+                }
+            }
+
+            val outIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000)
+            when {
+                outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    capturedFormat = encoder.outputFormat
+                }
+                outIndex >= 0 -> {
+                    val outputBuffer = encoder.getOutputBuffer(outIndex)
+                    if (outputBuffer != null && bufferInfo.size > 0) {
+                        val data = ByteArray(bufferInfo.size)
+                        outputBuffer.position(bufferInfo.offset)
+                        outputBuffer.get(data)
+                        samples.add(EncodedSample(data, bufferInfo.presentationTimeUs, bufferInfo.flags))
+                    }
+                    encoder.releaseOutputBuffer(outIndex, false)
+                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                        encoder.stop()
+                        encoder.release()
+                        return Pair(capturedFormat ?: format, samples)
+                    }
+                }
+            }
+        }
+    }
+}
