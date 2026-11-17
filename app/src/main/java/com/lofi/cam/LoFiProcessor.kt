@@ -14,24 +14,26 @@ import kotlin.random.Random
 
 object LoFiProcessor {
 
-    /**
-     * targetHeightP: resolusi target dalam "p" (tinggi gambar dalam piksel),
-     * mengikuti aspek rasio foto asli. Contoh: 300 -> tinggi ~300px.
-     */
-    fun process(source: Bitmap, targetHeightP: Int, stampTimestamp: Boolean = true): Bitmap {
-        // Keep the output at the requested low resolution. Upscaling a full
-        // sensor image back to its original size wastes memory and risks OOM.
-        val lowRes = downscaleToHeight(source, targetHeightP.coerceIn(1, 150))
-        val graded = colorGrade(lowRes)
-        val grainy = addGrain(graded, amount = 18)
+    fun process(
+        source: Bitmap,
+        targetHeightP: Int,
+        noiseEnabled: Boolean = true,
+        stampTimestamp: Boolean = true
+    ): Bitmap {
+        val lowRes = downscaleToHeight(source, targetHeightP)
+        val upscaledBlurry = Bitmap.createScaledBitmap(
+            lowRes, source.width, source.height, true
+        )
+        val graded = colorGrade(upscaledBlurry)
+        val grainy = if (noiseEnabled) addGrain(graded, amount = 18) else graded
         val vignetted = addVignette(grainy)
         return if (stampTimestamp) stampDate(vignetted) else vignetted
     }
 
     private fun downscaleToHeight(src: Bitmap, targetHeightP: Int): Bitmap {
         val scale = targetHeightP.toFloat() / src.height.toFloat()
-        val w = max(1, (src.width * scale).toInt())
-        val h = max(1, targetHeightP)
+        val w = max(16, (src.width * scale).toInt())
+        val h = max(16, targetHeightP)
         return Bitmap.createScaledBitmap(src, w, h, true)
     }
 
