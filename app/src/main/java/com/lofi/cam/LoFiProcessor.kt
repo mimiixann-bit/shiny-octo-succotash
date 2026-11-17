@@ -19,24 +19,27 @@ object LoFiProcessor {
     fun process(
         source: Bitmap,
         targetHeightP: Int,
+        pixelEnabled: Boolean = true,
         filter: FilterType = FilterType.NORMAL,
         noiseEnabled: Boolean = true,
         stampTimestamp: Boolean = true
     ): Bitmap {
-        val lowRes = downscaleToHeight(source, targetHeightP)
-        val upscaledBlurry = Bitmap.createScaledBitmap(
-            lowRes, source.width, source.height, true
-        )
-        val graded = colorGrade(upscaledBlurry, filter)
+        val base = if (pixelEnabled) {
+            val lowRes = downscaleToHeight(source, targetHeightP)
+            Bitmap.createScaledBitmap(lowRes, source.width, source.height, true)
+        } else {
+            source
+        }
+        val graded = colorGrade(base, filter)
         val grainy = if (noiseEnabled) addGrain(graded, amount = 18) else graded
         val vignetted = addVignette(grainy)
         return if (stampTimestamp) stampDate(vignetted) else vignetted
     }
 
     private fun downscaleToHeight(src: Bitmap, targetHeightP: Int): Bitmap {
-        val scale = targetHeightP.toFloat() / src.height.toFloat()
-        val w = max(16, (src.width * scale).toInt())
-        val h = max(16, targetHeightP)
+        val h = max(1, targetHeightP)
+        val scale = h.toFloat() / src.height.toFloat()
+        val w = max(1, (src.width * scale).toInt())
         return Bitmap.createScaledBitmap(src, w, h, true)
     }
 
@@ -58,7 +61,7 @@ object LoFiProcessor {
             b = contrast(b, 1.08f)
 
             when (filter) {
-                FilterType.NORMAL -> { /* tidak ada tambahan */ }
+                FilterType.NORMAL -> { }
                 FilterType.SEPIA -> {
                     val nr = (r * 0.393 + g * 0.769 + b * 0.189)
                     val ng = (r * 0.349 + g * 0.686 + b * 0.168)
