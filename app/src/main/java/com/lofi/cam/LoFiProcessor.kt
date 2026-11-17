@@ -1,336 +1,151 @@
 package com.lofi.cam
 
-import android.graphics.Rect
-import android.media.MediaCodec
-import android.media.MediaCodecInfo
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMetadataRetriever
-import android.media.MediaMuxer
-import android.os.SystemClock
-import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.max
+import kotlin.random.Random
 
-object VideoLoFiProcessor {
+object LoFiProcessor {
 
-    private data class EncodedSample(val data: ByteArray, val presentationTimeUs: Long, val flags: Int)
+    enum class FilterType { NORMAL, SEPIA, BW, WARM, COOL }
 
-    fun convert(
-        inputPath: String,
-        outputPath: String,
+    fun process(
+        source: Bitmap,
         targetHeightP: Int,
-        targetFps: Int,
-        qualityPercent: Int = 50,
+        filter: FilterType = FilterType.NORMAL,
         noiseEnabled: Boolean = true,
-        dateMarkEnabled: Boolean = true
-    ) {
-        val audioResult = try {
-            decodeAndEncodeAudio(inputPath)
-        } catch (e: Exception) {
-            null
-        }
-
-        val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(inputPath)
-
-        val durationMs = retriever.extractMetadata(
-            MediaMetadataRetriever.METADATA_KEY_DURATION
-        )?.toLongOrNull() ?: 0L
-        val srcWidth = retriever.extractMetadata(
-            MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
-        )?.toIntOrNull() ?: 480
-        val srcHeight = retriever.extractMetadata(
-            MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
-        )?.toIntOrNull() ?: 640
-
-        val scale = targetHeightP.toFloat() / srcHeight.toFloat()
-        var outWidth = (srcWidth * scale).toInt()
-        var outHeight = targetHeightP
-        if (outWidth % 2 != 0) outWidth += 1
-        if (outHeight % 2 != 0) outHeight += 1
-        outWidth = max(16, outWidth)
-        outHeight = max(16, outHeight)
-
-        // Quality 10-100% -> bitrate ~50kbps - 500kbps (makin rendah, makin burik/kompresi kasar)
-        val bitRate = (50_000 + (qualityPercent.coerceIn(10, 100) / 100.0 * 450_000)).toInt()
-
-        val videoFormat = MediaFormat.createVideoFormat(
-            MediaFormat.MIMETYPE_VIDEO_AVC, outWidth, outHeight
-        ).apply {
-            setInteger(
-                MediaFormat.KEY_COLOR_FORMAT,
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
-            )
-            setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
-            setInteger(MediaFormat.KEY_FRAME_RATE, targetFps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-        }
-
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val inputSurface = encoder.createInputSurface()
-        encoder.start()
-
-        val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_3GPP)
-        var videoTrackIndex = -1
-        var audioTrackIndex = -1
-        var muxerStarted = false
-        val bufferInfo = MediaCodec.BufferInfo()
-
-        if (audioResult != null) {
-            audioTrackIndex = muxer.addTrack(audioResult.first)
-        }
-
-        fun writeBufferedAudio() {
-            if (audioResult == null) return
-            for (sample in audioResult.second) {
-                if (sample.data.isEmpty()) continue
-                val bb = ByteBuffer.wrap(sample.data)
-                val info = MediaCodec.BufferInfo()
-                info.set(
-                    0,
-                    sample.data.size,
-                    sample.presentationTimeUs,
-                    sample.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM.inv()
-                )
-                muxer.writeSampleData(audioTrackIndex, bb, info)
-            }
-        }
-
-        fun drain(endOfStream: Boolean) {
-            if (endOfStream) encoder.signalEndOfInputStream()
-            while (true) {
-                val outIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000)
-                when {
-                    outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                        if (!endOfStream) return
-                    }
-                    outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        videoTrackIndex = muxer.addTrack(encoder.outputFormat)
-                        muxer.start()
-                        muxerStarted = true
-                        writeBufferedAudio()
-                    }
-                    outIndex >= 0 -> {
-                        val encodedData = encoder.getOutputBuffer(outIndex)
-                        if (encodedData != null && bufferInfo.size > 0 && muxerStarted) {
-                            encodedData.position(bufferInfo.offset)
-                            encodedData.limit(bufferInfo.offset + bufferInfo.size)
-                            muxer.writeSampleData(videoTrackIndex, encodedData, bufferInfo)
-                        }
-                        encoder.releaseOutputBuffer(outIndex, false)
-                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                            return
-                        }
-                    }
-                }
-            }
-        }
-
-        val frameIntervalUs = 1_000_000L / targetFps
-        val frameIntervalMs = 1000L / targetFps
-        val durationUs = durationMs * 1000L
-        var t = 0L
-
-        while (t < durationUs) {
-            val frameStart = SystemClock.elapsedRealtime()
-            val rawFrame = retriever.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST)
-            if (rawFrame != null) {
-                val processed = LoFiProcessor.process(
-                    rawFrame, targetHeightP,
-                    noiseEnabled = noiseEnabled,
-                    stampTimestamp = dateMarkEnabled
-                )
-                val canvas = inputSurface.lockCanvas(null)
-                try {
-                    canvas.drawBitmap(processed, null, Rect(0, 0, outWidth, outHeight), null)
-                } finally {
-                    inputSurface.unlockCanvasAndPost(canvas)
-                }
-            }
-            drain(false)
-            val elapsed = SystemClock.elapsedRealtime() - frameStart
-            val sleepTime = frameIntervalMs - elapsed
-            if (sleepTime > 0) SystemClock.sleep(sleepTime)
-            t += frameIntervalUs
-        }
-
-        drain(true)
-
-        retriever.release()
-        encoder.stop()
-        encoder.release()
-        inputSurface.release()
-        if (muxerStarted) muxer.stop()
-        muxer.release()
+        stampTimestamp: Boolean = true
+    ): Bitmap {
+        val lowRes = downscaleToHeight(source, targetHeightP)
+        val upscaledBlurry = Bitmap.createScaledBitmap(
+            lowRes, source.width, source.height, true
+        )
+        val graded = colorGrade(upscaledBlurry, filter)
+        val grainy = if (noiseEnabled) addGrain(graded, amount = 18) else graded
+        val vignetted = addVignette(grainy)
+        return if (stampTimestamp) stampDate(vignetted) else vignetted
     }
 
-    // ---------- Audio: AAC -> PCM mono -> resample 8kHz -> AMR-NB ----------
-
-    private fun decodeAndEncodeAudio(inputPath: String): Pair<MediaFormat, List<EncodedSample>>? {
-        val extractor = MediaExtractor()
-        extractor.setDataSource(inputPath)
-
-        var audioTrackIndex = -1
-        var inputFormat: MediaFormat? = null
-        for (i in 0 until extractor.trackCount) {
-            val fmt = extractor.getTrackFormat(i)
-            val mime = fmt.getString(MediaFormat.KEY_MIME) ?: continue
-            if (mime.startsWith("audio/")) {
-                audioTrackIndex = i
-                inputFormat = fmt
-                break
-            }
-        }
-        if (audioTrackIndex < 0 || inputFormat == null) {
-            extractor.release()
-            return null
-        }
-        extractor.selectTrack(audioTrackIndex)
-
-        val srcSampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-        val srcChannels = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-        val mime = inputFormat.getString(MediaFormat.KEY_MIME)!!
-
-        val decoder = MediaCodec.createDecoderByType(mime)
-        decoder.configure(inputFormat, null, null, 0)
-        decoder.start()
-
-        val pcmBuffer = ByteArrayOutputStream()
-        val bufferInfo = MediaCodec.BufferInfo()
-        var sawInputEOS = false
-        var sawOutputEOS = false
-
-        while (!sawOutputEOS) {
-            if (!sawInputEOS) {
-                val inIndex = decoder.dequeueInputBuffer(10_000)
-                if (inIndex >= 0) {
-                    val inputBuffer = decoder.getInputBuffer(inIndex)!!
-                    val sampleSize = extractor.readSampleData(inputBuffer, 0)
-                    if (sampleSize < 0) {
-                        decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                        sawInputEOS = true
-                    } else {
-                        val pts = extractor.sampleTime
-                        decoder.queueInputBuffer(inIndex, 0, sampleSize, pts, 0)
-                        extractor.advance()
-                    }
-                }
-            }
-
-            val outIndex = decoder.dequeueOutputBuffer(bufferInfo, 10_000)
-            if (outIndex >= 0) {
-                val outputBuffer = decoder.getOutputBuffer(outIndex)
-                if (outputBuffer != null && bufferInfo.size > 0) {
-                    val chunk = ByteArray(bufferInfo.size)
-                    outputBuffer.position(bufferInfo.offset)
-                    outputBuffer.get(chunk)
-                    pcmBuffer.write(chunk)
-                }
-                decoder.releaseOutputBuffer(outIndex, false)
-                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                    sawOutputEOS = true
-                }
-            }
-        }
-
-        decoder.stop()
-        decoder.release()
-        extractor.release()
-
-        val monoPcm = toMono16Bit(pcmBuffer.toByteArray(), srcChannels)
-        val resampled = resampleTo8k(monoPcm, srcSampleRate)
-        return encodeToAmrNb(resampled)
+    private fun downscaleToHeight(src: Bitmap, targetHeightP: Int): Bitmap {
+        val scale = targetHeightP.toFloat() / src.height.toFloat()
+        val w = max(16, (src.width * scale).toInt())
+        val h = max(16, targetHeightP)
+        return Bitmap.createScaledBitmap(src, w, h, true)
     }
 
-    private fun toMono16Bit(pcm: ByteArray, channels: Int): ShortArray {
-        val totalSamples = pcm.size / 2
-        val shorts = ShortArray(totalSamples)
-        val bb = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)
-        for (i in 0 until totalSamples) shorts[i] = bb.short
-        if (channels <= 1) return shorts
+    private fun colorGrade(src: Bitmap, filter: FilterType): Bitmap {
+        val out = src.copy(Bitmap.Config.ARGB_8888, true)
+        val w = out.width
+        val h = out.height
+        val pixels = IntArray(w * h)
+        out.getPixels(pixels, 0, w, 0, 0, w, h)
 
-        val frames = shorts.size / channels
-        val mono = ShortArray(frames)
-        for (f in 0 until frames) {
-            var sum = 0
-            for (c in 0 until channels) sum += shorts[f * channels + c]
-            mono[f] = (sum / channels).toShort()
-        }
-        return mono
-    }
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            var r = Color.red(p)
+            var g = Color.green(p)
+            var b = Color.blue(p)
 
-    private fun resampleTo8k(mono: ShortArray, srcRate: Int): ShortArray {
-        if (srcRate == 8000 || mono.isEmpty()) return mono
-        val ratio = srcRate.toDouble() / 8000.0
-        val outLen = (mono.size / ratio).toInt()
-        val out = ShortArray(outLen)
-        for (i in 0 until outLen) {
-            val srcIndex = (i * ratio).toInt().coerceIn(0, mono.size - 1)
-            out[i] = mono[srcIndex]
+            r = contrast(r, 1.15f)
+            g = contrast(g, 1.12f)
+            b = contrast(b, 1.08f)
+
+            when (filter) {
+                FilterType.NORMAL -> { /* tidak ada tambahan */ }
+                FilterType.SEPIA -> {
+                    val nr = (r * 0.393 + g * 0.769 + b * 0.189)
+                    val ng = (r * 0.349 + g * 0.686 + b * 0.168)
+                    val nb = (r * 0.272 + g * 0.534 + b * 0.131)
+                    r = nr.toInt().coerceIn(0, 255)
+                    g = ng.toInt().coerceIn(0, 255)
+                    b = nb.toInt().coerceIn(0, 255)
+                }
+                FilterType.BW -> {
+                    val gray = (r * 0.299 + g * 0.587 + b * 0.114).toInt().coerceIn(0, 255)
+                    r = gray; g = gray; b = gray
+                }
+                FilterType.WARM -> {
+                    r = (r + 20).coerceIn(0, 255)
+                    g = (g + 8).coerceIn(0, 255)
+                    b = (b - 20).coerceIn(0, 255)
+                }
+                FilterType.COOL -> {
+                    r = (r - 15).coerceIn(0, 255)
+                    b = (b + 20).coerceIn(0, 255)
+                }
+            }
+
+            pixels[i] = Color.rgb(r, g, b)
         }
+        out.setPixels(pixels, 0, w, 0, 0, w, h)
         return out
     }
 
-    private fun encodeToAmrNb(pcm: ShortArray): Pair<MediaFormat, List<EncodedSample>> {
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AMR_NB, 8000, 1)
-        format.setInteger(MediaFormat.KEY_BIT_RATE, 12200)
+    private fun contrast(channel: Int, factor: Float): Int {
+        val v = ((channel - 128) * factor + 128).toInt()
+        return v.coerceIn(0, 255)
+    }
 
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AMR_NB)
-        encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        encoder.start()
+    private fun addGrain(src: Bitmap, amount: Int): Bitmap {
+        val out = src.copy(Bitmap.Config.ARGB_8888, true)
+        val w = out.width
+        val h = out.height
+        val pixels = IntArray(w * h)
+        out.getPixels(pixels, 0, w, 0, 0, w, h)
+        val rnd = Random(System.nanoTime())
 
-        val frameSamples = 160
-        var sampleIndex = 0
-        var capturedFormat: MediaFormat? = null
-        val samples = mutableListOf<EncodedSample>()
-        val bufferInfo = MediaCodec.BufferInfo()
-        var inputDone = false
-
-        while (true) {
-            if (!inputDone) {
-                val inIndex = encoder.dequeueInputBuffer(10_000)
-                if (inIndex >= 0) {
-                    val inputBuffer = encoder.getInputBuffer(inIndex)!!
-                    inputBuffer.clear()
-                    if (sampleIndex < pcm.size) {
-                        val remaining = pcm.size - sampleIndex
-                        val count = minOf(frameSamples, remaining)
-                        for (i in 0 until count) inputBuffer.putShort(pcm[sampleIndex + i])
-                        val ptsUs = (sampleIndex.toLong() * 1_000_000L) / 8000L
-                        encoder.queueInputBuffer(inIndex, 0, count * 2, ptsUs, 0)
-                        sampleIndex += count
-                    } else {
-                        val ptsUs = (sampleIndex.toLong() * 1_000_000L) / 8000L
-                        encoder.queueInputBuffer(inIndex, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                        inputDone = true
-                    }
-                }
-            }
-
-            val outIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000)
-            when {
-                outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    capturedFormat = encoder.outputFormat
-                }
-                outIndex >= 0 -> {
-                    val outputBuffer = encoder.getOutputBuffer(outIndex)
-                    if (outputBuffer != null && bufferInfo.size > 0) {
-                        val data = ByteArray(bufferInfo.size)
-                        outputBuffer.position(bufferInfo.offset)
-                        outputBuffer.get(data)
-                        samples.add(EncodedSample(data, bufferInfo.presentationTimeUs, bufferInfo.flags))
-                    }
-                    encoder.releaseOutputBuffer(outIndex, false)
-                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                        encoder.stop()
-                        encoder.release()
-                        return Pair(capturedFormat ?: format, samples)
-                    }
-                }
-            }
+        for (i in pixels.indices) {
+            val noise = rnd.nextInt(-amount, amount + 1)
+            val p = pixels[i]
+            val r = (Color.red(p) + noise).coerceIn(0, 255)
+            val g = (Color.green(p) + noise).coerceIn(0, 255)
+            val b = (Color.blue(p) + noise).coerceIn(0, 255)
+            pixels[i] = Color.rgb(r, g, b)
         }
+        out.setPixels(pixels, 0, w, 0, 0, w, h)
+        return out
+    }
+
+    private fun addVignette(src: Bitmap): Bitmap {
+        val out = src.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(out)
+        val radius = max(out.width, out.height) * 0.75f
+        val paint = Paint().apply {
+            shader = RadialGradient(
+                out.width / 2f, out.height / 2f, radius,
+                Color.argb(0, 0, 0, 0), Color.argb(130, 0, 0, 0),
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, out.width.toFloat(), out.height.toFloat(), paint)
+        return out
+    }
+
+    private fun stampDate(src: Bitmap): Bitmap {
+        val out = src.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(out)
+        val text = SimpleDateFormat("dd'/'MM'/'yyyy", Locale.getDefault()).format(Date())
+        val textSize = out.height * 0.045f
+        val paint = Paint().apply {
+            color = Color.argb(220, 255, 165, 0)
+            this.textSize = textSize
+            isAntiAlias = false
+            isFakeBoldText = true
+        }
+        val margin = out.width * 0.03f
+        canvas.drawText(
+            text,
+            out.width - paint.measureText(text) - margin,
+            out.height - margin,
+            paint
+        )
+        return out
     }
 }
