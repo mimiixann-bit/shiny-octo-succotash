@@ -4,179 +4,153 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/retro_ink">
+    android:background="@color/black">
 
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/controlsBar"
+        app:layout_constraintBottom_toTopOf="@id/extraControlsBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
+
+    <ImageView
+        android:id="@+id/lofiOverlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="fitCenter"
+        app:layout_constraintTop_toTopOf="@id/previewView"
+        app:layout_constraintBottom_toBottomOf="@id/previewView"
+        app:layout_constraintStart_toStartOf="@id/previewView"
+        app:layout_constraintEnd_toEndOf="@id/previewView" />
+
+    <LinearLayout
+        android:id="@+id/extraControlsBar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@color/black"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        app:layout_constraintBottom_toTopOf="@id/controlsBar">
+
+        <TextView
+            android:id="@+id/qualityLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Q:50%"
+            android:textColor="@color/white"
+            android:textSize="11sp" />
+
+        <SeekBar
+            android:id="@+id/qualitySeekBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="6dp"
+            android:min="10"
+            android:max="100"
+            android:progress="50" />
+
+        <Button
+            android:id="@+id/btnNoiseToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NOISE:ON"
+            android:textSize="10sp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp" />
+
+        <Button
+            android:id="@+id/btnDateToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text="DATE:ON"
+            android:textSize="10sp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp" />
+
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/controlsBar"
         android:layout_width="match_parent"
-        android:layout_height="158dp"
-        android:background="@color/retro_panel"
-        android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="6dp"
+        android:layout_height="56dp"
+        android:background="@color/black"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
         app:layout_constraintBottom_toTopOf="@id/bottomBar">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="38dp"
-            android:background="@drawable/retro_segment_bg"
-            android:orientation="horizontal"
-            android:padding="3dp">
+        <Button
+            android:id="@+id/btnModeToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PHOTO"
+            android:textSize="12sp" />
 
-            <Button
-                android:id="@+id/btnPhotoMode"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:minHeight="0dp"
-                android:text="PHOTO"
-                android:textColor="@color/retro_paper"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/btnVideoMode"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:minHeight="0dp"
-                android:text="VIDEO"
-                android:textColor="@color/retro_paper"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="34dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/resLabel"
-                android:layout_width="42dp"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="75p"
-                android:textColor="@color/retro_sage"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <SeekBar
-                android:id="@+id/resSeekBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:max="149"
-                android:progress="74"
-                android:progressTint="@color/retro_orange"
-                android:thumbTint="@color/retro_paper" />
-
-            <SeekBar
-                android:id="@+id/fpsSeekBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:min="5"
-                android:max="30"
-                android:progress="15"
-                android:progressTint="@color/retro_orange"
-                android:thumbTint="@color/retro_paper" />
-
-            <TextView
-                android:id="@+id/fpsLabel"
-                android:layout_width="48dp"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="15 FPS"
-                android:textColor="@color/retro_paper"
-                android:textSize="11sp" />
-        </LinearLayout>
-
-        <RadioGroup
-            android:id="@+id/formatGroup"
-            android:layout_width="match_parent"
-            android:layout_height="36dp"
-            android:gravity="center"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/format3gp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:buttonTint="@color/retro_orange"
-                android:checked="true"
-                android:paddingEnd="18dp"
-                android:text="3GP"
-                android:textColor="@color/retro_paper"
-                android:textSize="12sp" />
-
-            <RadioButton
-                android:id="@+id/formatMp4"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:buttonTint="@color/retro_orange"
-                android:text="MP4"
-                android:textColor="@color/retro_paper"
-                android:textSize="12sp" />
-        </RadioGroup>
+        <SeekBar
+            android:id="@+id/fpsSeekBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="8dp"
+            android:min="8"
+            android:max="25"
+            android:progress="15" />
 
         <TextView
-            android:id="@+id/flashLabel"
-            android:layout_width="match_parent"
+            android:id="@+id/fpsLabel"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="center"
-            android:text="PHOTO • JPEG"
-            android:textColor="@color/retro_sage"
-            android:textSize="10sp"
-            android:letterSpacing="0.12" />
+            android:text="15 FPS"
+            android:textColor="@color/white"
+            android:textSize="12sp" />
+
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="match_parent"
-        android:layout_height="94dp"
-        android:background="@color/retro_ink"
+        android:layout_height="120dp"
+        android:background="@color/black"
         android:gravity="center"
         android:orientation="horizontal"
-        android:paddingHorizontal="22dp"
         app:layout_constraintBottom_toBottomOf="parent">
 
         <TextView
+            android:id="@+id/resLabel"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="LOFI\nCAMERA"
-            android:textColor="@color/retro_paper"
-            android:textSize="10sp"
-            android:textStyle="bold" />
+            android:clickable="true"
+            android:focusable="true"
+            android:text="300p"
+            android:textColor="@color/accent"
+            android:textStyle="bold"
+            android:textSize="14sp" />
 
         <ImageButton
             android:id="@+id/btnShutter"
             android:layout_width="72dp"
             android:layout_height="72dp"
+            android:layout_weight="0"
             android:background="@drawable/shutter_button"
-            android:contentDescription="Ambil foto atau mulai/berhenti merekam" />
+            android:contentDescription="Shutter" />
 
         <TextView
+            android:id="@+id/flashLabel"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="EST.\n2026"
-            android:textColor="@color/retro_sage"
-            android:textSize="10sp"
-            android:textStyle="bold" />
+            android:text="FLASH"
+            android:textColor="@color/white"
+            android:textSize="14sp" />
+
     </LinearLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>
