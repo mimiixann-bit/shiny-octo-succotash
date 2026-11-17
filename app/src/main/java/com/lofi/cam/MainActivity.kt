@@ -7,6 +7,8 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,13 +37,30 @@ class MainActivity : AppCompatActivity() {
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
     private var cameraProvider: ProcessCameraProvider? = null
+    private var camera: Camera? = null
+    private lateinit var scaleGestureDetector: ScaleGestureDetector
 
-    private val resolutionPresets = listOf(120, 180, 240, 300, 360, 480)
-    private var resolutionIndex = 2
     private var selectedFps = 15
     private var qualityPercent = 50
     private var noiseEnabled = true
     private var dateMarkEnabled = true
+
+    private var pixelEnabled = true
+    private var pixelResolution = 50
+
+    private val filterPresets = listOf(
+        LoFiProcessor.FilterType.NORMAL,
+        LoFiProcessor.FilterType.SEPIA,
+        LoFiProcessor.FilterType.BW,
+        LoFiProcessor.FilterType.WARM,
+        LoFiProcessor.FilterType.COOL
+    )
+    private var filterIndex = 0
+
+    private var lensFacing = CameraSelector.LENS_FACING_BACK
+
+    // 0 = OFF, 1 = ON, 2 = AUTO
+    private var flashState = 0
 
     private var isVideoMode = false
     private var isRecording = false
@@ -63,20 +82,50 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        updateResolutionLabel()
         updateFpsLabel()
         updateModeLabel()
         updateQualityLabel()
         updateNoiseLabel()
         updateDateLabel()
+        updateFilterLabel()
+        updatePixelLabel()
+        updatePixelVisibility()
+        updateFlashLabel()
+
+        setupScaleGesture()
 
         binding.btnShutter.setOnClickListener {
             if (isVideoMode) toggleRecording() else takePhoto()
         }
 
-        binding.resLabel.setOnClickListener {
-            resolutionIndex = (resolutionIndex + 1) % resolutionPresets.size
-            updateResolutionLabel()
+        binding.btnFilterToggle.setOnClickListener {
+            filterIndex = (filterIndex + 1) % filterPresets.size
+            updateFilterLabel()
+        }
+
+        binding.btnPixelToggle.setOnClickListener {
+            pixelEnabled = !pixelEnabled
+            updatePixelLabel()
+            updatePixelVisibility()
+        }
+
+        binding.btnFlipCamera.setOnClickListener {
+            if (isRecording) {
+                Toast.makeText(this, "Hentikan rekaman dulu", Toast.LENGTH_SHORT).show()
+            } else {
+                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                    CameraSelector.LENS_FACING_FRONT
+                } else {
+                    CameraSelector.LENS_FACING_BACK
+                }
+                rebindCamera()
+            }
+        }
+
+        binding.btnFlash.setOnClickListener {
+            flashState = (flashState + 1) % 3
+            updateFlashLabel()
+            applyFlashState()
         }
 
         binding.btnModeToggle.setOnClickListener {
@@ -109,6 +158,24 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
 
+        binding.pixelResSeekBar.progress = pixelResolution
+        binding.pixelResSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                pixelResolution = progress.coerceIn(1, 150)
+                updatePixelResLabel()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+
+        binding.zoomSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                camera?.cameraControl?.setLinearZoom(progress / 100f)
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+
         binding.btnNoiseToggle.setOnClickListener {
             noiseEnabled = !noiseEnabled
             updateNoiseLabel()
@@ -126,8 +193,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateResolutionLabel() {
-        binding.resLabel.text = "${resolutionPresets[resolutionIndex]}p"
+    private fun setupScaleGesture() {
+        scaleGestureDetector = ScaleGestureDetector(
+            this,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    val currentRatio = camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: 1f
+                    val newRatio = currentRatio * detector.scaleFactor
+                    camera?.cameraControl?.setZoomRatio(newRatio)
+                    return true
+                }
+            }
+        )
+        binding.previewView.setOnTouchListener { _, event ->
+            scaleGestureDetector.onTouchEvent(event)
+            true
+        }
     }
 
     private fun updateFpsLabel() {
@@ -148,6 +229,47 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDateLabel() {
         binding.btnDateToggle.text = if (dateMarkEnabled) "DATE:ON" else "DATE:OFF"
+    }
+
+    private fun updateFilterLabel() {
+        binding.btnFilterToggle.text = filterPresets[filterIndex].name
+    }
+
+    private fun updatePixelLabel() {
+        binding.btnPixelToggle.text = if (pixelEnabled) "PIXEL:ON" else "PIXEL:OFF"
+    }
+
+    private fun updatePixelResLabel() {
+        binding.pixelResLabel.text = "${pixelResolution}p"
+    }
+
+    private fun updatePixelVisibility() {
+        val visibility = if (pixelEnabled) android.view.View.VISIBLE else android.view.View.GONE
+        binding.pixelResLabel.visibility = visibility
+        binding.pixelResSeekBar.visibility = visibility
+        updatePixelResLabel()
+    }
+
+    private fun updateFlashLabel() {
+        binding.btnFlash.text = when (flashState) {
+            1 -> "FLASH:ON"
+            2 -> "FLASH:AUTO"
+            else -> "FLASH:OFF"
+        }
+    }
+
+    private fun applyFlashState() {
+        if (isVideoMode) {
+            // Video tidak punya mode auto per-frame; ON & AUTO sama-sama
+            // menyalakan senter (torch) selama preview/rekam.
+            camera?.cameraControl?.enableTorch(flashState != 0)
+        } else {
+            imageCapture?.flashMode = when (flashState) {
+                1 -> ImageCapture.FLASH_MODE_ON
+                2 -> ImageCapture.FLASH_MODE_AUTO
+                else -> ImageCapture.FLASH_MODE_OFF
+            }
+        }
     }
 
     private fun hasCameraPermission() =
@@ -173,25 +295,29 @@ class MainActivity : AppCompatActivity() {
         val preview = Preview.Builder().build().also {
             it.setSurfaceProvider(binding.previewView.surfaceProvider)
         }
-        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+        val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
         try {
-            if (isVideoMode) {
+            camera = if (isVideoMode) {
                 val recorder = Recorder.Builder()
                     .setQualitySelector(QualitySelector.from(Quality.SD))
                     .build()
                 val capture = VideoCapture.withOutput(recorder)
-                provider.bindToLifecycle(this, selector, preview, capture)
+                val cam = provider.bindToLifecycle(this, selector, preview, capture)
                 videoCapture = capture
                 imageCapture = null
+                cam
             } else {
                 val capture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                     .build()
-                provider.bindToLifecycle(this, selector, preview, capture)
+                val cam = provider.bindToLifecycle(this, selector, preview, capture)
                 imageCapture = capture
                 videoCapture = null
+                cam
             }
+            camera?.cameraControl?.setLinearZoom(binding.zoomSeekBar.progress / 100f)
+            applyFlashState()
         } catch (e: Exception) {
             Toast.makeText(this, "Gagal membuka kamera: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -199,7 +325,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun takePhoto() {
         val capture = imageCapture ?: return
-        val targetHeightP = resolutionPresets[resolutionIndex]
+        val targetHeightP = pixelResolution
+        val pixelOn = pixelEnabled
+        val filter = filterPresets[filterIndex]
 
         capture.takePicture(
             ContextCompat.getMainExecutor(this),
@@ -213,6 +341,8 @@ class MainActivity : AppCompatActivity() {
 
                     val result = LoFiProcessor.process(
                         bitmap, targetHeightP,
+                        pixelEnabled = pixelOn,
+                        filter = filter,
                         noiseEnabled = noiseEnabled,
                         stampTimestamp = dateMarkEnabled
                     )
@@ -235,6 +365,7 @@ class MainActivity : AppCompatActivity() {
             activeRecording?.stop()
             activeRecording = null
             isRecording = false
+            binding.btnShutter.setBackgroundResource(R.drawable.shutter_button)
             return
         }
 
@@ -250,6 +381,7 @@ class MainActivity : AppCompatActivity() {
         activeRecording = pending.start(ContextCompat.getMainExecutor(this)) { event ->
             if (event is VideoRecordEvent.Finalize) {
                 isRecording = false
+                binding.btnShutter.setBackgroundResource(R.drawable.shutter_button)
                 if (!event.hasError()) {
                     processRecordedVideo(rawFile)
                 } else {
@@ -258,14 +390,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
         isRecording = true
+        binding.btnShutter.setBackgroundResource(R.drawable.shutter_button_recording)
     }
 
     private fun processRecordedVideo(rawFile: File) {
-        val targetHeightP = resolutionPresets[resolutionIndex]
+        val targetHeightP = pixelResolution
+        val pixelOn = pixelEnabled
         val fps = selectedFps
         val quality = qualityPercent
         val noise = noiseEnabled
         val dateMark = dateMarkEnabled
+        val filter = filterPresets[filterIndex]
         Toast.makeText(this, "Memproses video...", Toast.LENGTH_SHORT).show()
 
         Thread {
@@ -273,6 +408,8 @@ class MainActivity : AppCompatActivity() {
                 val outFile = File(cacheDir, "loficam_${System.currentTimeMillis()}.3gp")
                 VideoLoFiProcessor.convert(
                     rawFile.absolutePath, outFile.absolutePath, targetHeightP, fps,
+                    pixelEnabled = pixelOn,
+                    filter = filter,
                     qualityPercent = quality,
                     noiseEnabled = noise,
                     dateMarkEnabled = dateMark
